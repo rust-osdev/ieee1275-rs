@@ -1,6 +1,5 @@
 #![no_std]
 #![no_main]
-#![feature(ptr_to_from_bits)]
 
 use core::panic::PanicInfo;
 
