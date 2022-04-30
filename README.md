@@ -9,11 +9,11 @@ For now this project is only targetting PowerVM/POWER environments as well as QE
 
 This is configured as a cross compilation crate by default. The output binaries are required to be PPC32bit big endian. You need a working powerpc gcc compiler, you may need to tweak ```.cargo/config``` to point to the right binaries.
 
-You also need to install the powerpc toolchain, for the time being we require some unstable features so you need to install it for that so you need the nightly channel as well:
+You also need to install the powerpc target toolchain:
 
-```$ rustup toolchain install  nightly-powerpc-unknown-linux-gnu```
+```$ rustup target add powerpc-unknown-linux-gnu```
 
-To create a valid target you need to build for relese, debug builds will fail due to symbol stripping:
+To create a valid target you need to build for release, debug builds will fail due to symbol stripping:
 
 ```$ cargo build --relaase --target powerpc-unknown-linux-gnu```
 
@@ -60,4 +60,3 @@ $ qemu-system-ppc64 -M pseries-6.1 -bios /usr/share/qemu/slof.bin -drive file=di
 ```
 
 You should see a "Hello from Rust into Open Firmware" message in the emulator output.
-
