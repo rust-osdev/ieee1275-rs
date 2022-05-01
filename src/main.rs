@@ -7,10 +7,12 @@ static mut GLOBAL_OF: Option<OF> = None;
 
 #[panic_handler]
 fn panic(_panic: &PanicInfo<'_>) -> ! {
-    unsafe { 
+    unsafe {
         match &GLOBAL_OF {
-            None => {},
-            Some(of) => {  of.exit(); }
+            None => {}
+            Some(of) => {
+                of.exit();
+            }
         };
     }
     loop {}
@@ -46,7 +48,7 @@ impl OF {
         ret.init()?;
         Ok(ret)
     }
-    
+
     fn init(&mut self) -> Result<(), &'static str> {
         let chosen = self.find_device("/chosen\0")?;
         let mut stdout: *mut OFiHandle = core::ptr::null_mut();
@@ -54,7 +56,7 @@ impl OF {
             chosen,
             "stdout\0",
             &mut stdout as *mut *mut OFiHandle,
-            core::mem::size_of::<*mut OFiHandle>() as isize
+            core::mem::size_of::<*mut OFiHandle>() as isize,
         )?;
 
         self.stdout = stdout;
@@ -64,36 +66,36 @@ impl OF {
 
     pub fn exit(&self) {
         let mut args = ServiceArgs {
-                service: "exit\0".as_ptr(),
-                nargs: 1,
-                nret: 0
+            service: "exit\0".as_ptr(),
+            nargs: 1,
+            nret: 0,
         };
 
         (self.entry_fn)(&mut args as *mut ServiceArgs);
     }
 
-    pub fn write_stdout(&self, msg: &'static str) -> Result<(), &'static str>{
+    pub fn write_stdout(&self, msg: &'static str) -> Result<(), &'static str> {
         #[repr(C)]
         struct MsgArgs {
             args: ServiceArgs,
             stdout: *mut OFiHandle,
             msg: *const u8,
             len: isize,
-            ret: i32
+            ret: i32,
         }
 
         let mut args = MsgArgs {
             args: ServiceArgs {
                 service: "write\0".as_ptr(),
                 nargs: 3,
-                nret: 1
+                nret: 1,
             },
             stdout: self.stdout,
             msg: msg.as_ptr(),
             len: isize::try_from(msg.len()).unwrap(),
-            ret: 0
+            ret: 0,
         };
-        
+
         (self.entry_fn)(&mut args.args as *mut ServiceArgs);
 
         match args.ret {
@@ -102,18 +104,15 @@ impl OF {
         }
     }
 
-    pub fn find_device(
-        &self,
-        name: &str
-    ) -> Result<*mut OFpHandle, &'static str> {
+    pub fn find_device(&self, name: &str) -> Result<*mut OFpHandle, &'static str> {
         #[repr(C)]
-        struct PropArgs {
+        struct FindDeviceArgs {
             args: ServiceArgs,
             device: *mut u8,
             phandle: *mut OFpHandle,
         }
 
-        let mut args = PropArgs {
+        let mut args = FindDeviceArgs {
             args: ServiceArgs {
                 service: "finddevice\0".as_ptr() as *mut u8,
                 nargs: 1,
@@ -134,7 +133,7 @@ impl OF {
         phandle: *mut OFpHandle,
         prop: &str,
         buf: *mut T,
-        buflen: isize
+        buflen: isize,
     ) -> Result<(), &'static str> {
         #[repr(C)]
         struct PropArgs<T> {
