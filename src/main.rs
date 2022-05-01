@@ -43,18 +43,23 @@ impl OF {
             stdout: core::ptr::null_mut(),
         };
 
-        ret.chosen = ret.find_device("/chosen\0")?;
-
+        ret.init()?;
+        Ok(ret)
+    }
+    
+    fn init(&mut self) -> Result<(), &'static str> {
+        let chosen = self.find_device("/chosen\0")?;
         let mut stdout: *mut OFiHandle = core::ptr::null_mut();
-        ret.get_property(
-            ret.chosen,
+        self.get_property(
+            chosen,
             "stdout\0",
             &mut stdout as *mut *mut OFiHandle,
             core::mem::size_of::<*mut OFiHandle>() as isize
         )?;
-        ret.stdout = stdout;
 
-        Ok(ret)
+        self.stdout = stdout;
+        self.chosen = chosen;
+        Ok(())
     }
 
     pub fn exit(&self) {
