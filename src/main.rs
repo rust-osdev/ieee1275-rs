@@ -63,22 +63,13 @@ impl OF {
     }
 
     pub fn exit(&self) {
-        #[repr(C)]
-        struct ExitArgs {
-            args: ServiceArgs,
-            ret: i32
-        }
-
-        let mut args = ExitArgs {
-            args: ServiceArgs {
+        let mut args = ServiceArgs {
                 service: "exit\0".as_ptr(),
                 nargs: 1,
-                nret: 1
-            },
-            ret: 0
+                nret: 0
         };
 
-        (self.entry_fn)(&mut args.args as *mut ServiceArgs);
+        (self.entry_fn)(&mut args as *mut ServiceArgs);
     }
 
     pub fn write_stdout(&self, msg: &'static str) -> Result<(), &'static str>{
