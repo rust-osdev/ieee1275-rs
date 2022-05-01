@@ -43,19 +43,14 @@ impl OF {
             stdout: core::ptr::null_mut(),
         };
 
-        let mut actual_size = 0 as isize;
-
-        let chosen = ret.find_device("/chosen\0")?;
-        ret.chosen = chosen;
-
+        ret.chosen = ret.find_device("/chosen\0")?;
 
         let mut stdout: *mut OFiHandle = core::ptr::null_mut();
         ret.get_property(
             ret.chosen,
             "stdout\0",
             &mut stdout as *mut *mut OFiHandle,
-            core::mem::size_of::<*mut OFiHandle>() as isize,
-            &mut actual_size as *mut isize,
+            core::mem::size_of::<*mut OFiHandle>() as isize
         )?;
         ret.stdout = stdout;
 
@@ -143,8 +138,7 @@ impl OF {
         phandle: *mut OFpHandle,
         prop: &str,
         buf: *mut T,
-        buflen: isize,
-        actual_size: *mut isize,
+        buflen: isize
     ) -> Result<(), &'static str> {
         #[repr(C)]
         struct PropArgs<T> {
@@ -153,7 +147,7 @@ impl OF {
             prop: *const u8,
             buf: *const T,
             buflen: isize,
-            size: *mut isize,
+            size: isize,
         }
 
         let mut args = PropArgs {
@@ -166,7 +160,7 @@ impl OF {
             prop: prop.as_ptr() as *mut u8,
             buf: buf,
             buflen: buflen,
-            size: actual_size,
+            size: 0,
         };
 
         match (self.entry_fn)(&mut args.args as *mut ServiceArgs) {
