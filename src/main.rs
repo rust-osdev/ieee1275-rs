@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+#![feature(default_alloc_error_handler)]
 
 use core::panic::PanicInfo;
 
@@ -8,7 +9,13 @@ extern "C" fn fallback_entry(_args: *mut ServiceArgs) -> isize {
 }
 
 #[global_allocator]
-static mut GLOBAL_OF: OF = OF { entry_fn: fallback_entry, stdout: core::ptr::null_mut(), chosen: core::ptr::null_mut() };
+static mut GLOBAL_OF: OF = OF {
+    entry_fn: fallback_entry,
+    stdout: core::ptr::null_mut(),
+    chosen: core::ptr::null_mut(),
+};
+
+extern crate alloc;
 
 #[panic_handler]
 fn panic(_panic: &PanicInfo<'_>) -> ! {
@@ -247,6 +254,5 @@ extern "C" fn _start(_r3: u32, _r4: u32, entry: extern "C" fn(*mut ServiceArgs) 
     };
 
     let _ = of.write_stdout("Hello from Rust into Open Firmware");
-
     loop {}
 }
