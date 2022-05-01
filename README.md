@@ -9,13 +9,13 @@ For now this project is only targetting PowerVM/POWER environments as well as QE
 
 This is configured as a cross compilation crate by default. The output binaries are required to be PPC32bit big endian. You need a working powerpc gcc compiler, you may need to tweak ```.cargo/config``` to point to the right binaries.
 
-You also need to install the powerpc target toolchain:
+You also need to install the powerpc nightly target:
 
-```$ rustup target add powerpc-unknown-linux-gnu```
+```$ rustup target add powerpc-unknown-linux-gnu --toolchain nightly```
 
-To create a valid target you need to build for release, debug builds will fail due to symbol stripping:
+To create a valid build you need to use --release, debug builds will fail (investigating as to why yet):
 
-```$ cargo build --relaase --target powerpc-unknown-linux-gnu```
+```$ cargo +nightly build --relaase --target powerpc-unknown-linux-gnu```
 
 ## Testing
 
