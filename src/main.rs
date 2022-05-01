@@ -3,17 +3,17 @@
 
 use core::panic::PanicInfo;
 
-static mut GLOBAL_OF: Option<OF> = None;
+extern "C" fn fallback_entry(_args: *mut ServiceArgs) -> isize {
+    -1
+}
+
+#[global_allocator]
+static mut GLOBAL_OF: OF = OF { entry_fn: fallback_entry, stdout: core::ptr::null_mut(), chosen: core::ptr::null_mut() };
 
 #[panic_handler]
 fn panic(_panic: &PanicInfo<'_>) -> ! {
     unsafe {
-        match &GLOBAL_OF {
-            None => {}
-            Some(of) => {
-                of.exit();
-            }
-        };
+        GLOBAL_OF.exit();
     }
     loop {}
 }
@@ -30,7 +30,7 @@ struct OFpHandle {}
 #[repr(C)]
 struct OFiHandle {}
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 struct OF {
     entry_fn: extern "C" fn(*mut ServiceArgs) -> isize,
     pub chosen: *mut OFpHandle,
@@ -163,6 +163,74 @@ impl OF {
             _ => Ok(()),
         }
     }
+
+    fn claim(&self, size: usize, align: usize) -> Result<*mut u8, &'static str> {
+        #[repr(C)]
+        struct ClaimArgs {
+            args: ServiceArgs,
+            virt: *mut u8,
+            size: usize,
+            align: usize,
+            ret: *mut u8,
+        }
+
+        if align == 0 {
+            return Err("Could not allocate memory with alignment '0'");
+        }
+
+        let mut args = ClaimArgs {
+            args: ServiceArgs {
+                service: "claim\0".as_ptr(),
+                nargs: 3,
+                nret: 1,
+            },
+            virt: core::ptr::null_mut(),
+            size,
+            align,
+            ret: core::ptr::null_mut(),
+        };
+
+        match (self.entry_fn)(&mut args.args as *mut ServiceArgs) {
+            -1 => Err("Could not allocate memory"),
+            _ => Ok(args.ret),
+        }
+    }
+
+    fn release(&self, virt: *mut u8, size: usize) {
+        #[repr(C)]
+        struct ReleaseArgs {
+            args: ServiceArgs,
+            virt: *mut u8,
+            size: usize,
+        }
+
+        let mut args = ReleaseArgs {
+            args: ServiceArgs {
+                service: "release\0".as_ptr(),
+                nargs: 2,
+                nret: 0,
+            },
+            virt,
+            size,
+        };
+
+        let _ = (self.entry_fn)(&mut args.args as *mut ServiceArgs);
+    }
+}
+
+unsafe impl core::alloc::GlobalAlloc for OF {
+    unsafe fn alloc(&self, layout: core::alloc::Layout) -> *mut u8 {
+        match self.claim(layout.size(), layout.align()) {
+            Ok(ret) => ret,
+            Err(msg) => {
+                panic!("{}", msg);
+            }
+        }
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: core::alloc::Layout) {
+        self.release(ptr, layout.size());
+    }
 }
 
 #[no_mangle]
@@ -173,8 +241,9 @@ extern "C" fn _start(_r3: u32, _r4: u32, entry: extern "C" fn(*mut ServiceArgs) 
         Err(_) => return -1,
     };
 
+    // WARNING: DO NOT USE alloc:: before this point
     unsafe {
-        GLOBAL_OF = Some(of.clone());
+        GLOBAL_OF = of;
     };
 
     let _ = of.write_stdout("Hello from Rust into Open Firmware");
