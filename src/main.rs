@@ -253,8 +253,6 @@ extern "C" fn _start(_r3: u32, _r4: u32, entry: extern "C" fn(*mut ServiceArgs) 
         GLOBAL_OF = of;
     };
 
-    let _ = of.write_stdout("Hello from Rust into Open Firmware");
-    let _foo = alloc::string::String::from("test");
-    let _ = of.write_stdout(_foo.as_str());
+    let _ = of.write_stdout(alloc::string::String::from("Hello from Rust into Open Firmware").as_str());
     loop {}
 }
