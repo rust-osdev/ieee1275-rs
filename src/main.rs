@@ -81,7 +81,7 @@ impl OF {
         (self.entry_fn)(&mut args as *mut ServiceArgs);
     }
 
-    pub fn write_stdout(&self, msg: &'static str) -> Result<(), &'static str> {
+    pub fn write_stdout(&self, msg: &str) -> Result<(), &'static str> {
         #[repr(C)]
         struct MsgArgs {
             args: ServiceArgs,
@@ -254,5 +254,7 @@ extern "C" fn _start(_r3: u32, _r4: u32, entry: extern "C" fn(*mut ServiceArgs) 
     };
 
     let _ = of.write_stdout("Hello from Rust into Open Firmware");
+    let _foo = alloc::string::String::from("test");
+    let _ = of.write_stdout(_foo.as_str());
     loop {}
 }
