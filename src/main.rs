@@ -40,8 +40,8 @@ struct OFiHandle {}
 #[derive(Clone, Copy)]
 struct OF {
     entry_fn: extern "C" fn(*mut ServiceArgs) -> isize,
-    pub chosen: *mut OFpHandle,
-    pub stdout: *mut OFiHandle,
+    pub chosen: *const OFpHandle,
+    pub stdout: *const OFiHandle,
 }
 
 impl OF {
@@ -58,12 +58,12 @@ impl OF {
 
     fn init(&mut self) -> Result<(), &'static str> {
         let chosen = self.find_device("/chosen\0")?;
-        let mut stdout: *mut OFiHandle = core::ptr::null_mut();
+        let mut stdout: *const OFiHandle = core::ptr::null_mut();
         let _ = self.get_property(
             chosen,
             "stdout\0",
-            &mut stdout as *mut *mut OFiHandle,
-            core::mem::size_of::<*mut OFiHandle>() as isize,
+            &mut stdout as *mut *const OFiHandle,
+            core::mem::size_of::<*const OFiHandle>() as isize,
         )?;
 
         self.stdout = stdout;
@@ -86,7 +86,7 @@ impl OF {
         #[repr(C)]
         struct MsgArgs {
             args: ServiceArgs,
-            stdout: *mut OFiHandle,
+            stdout: *const OFiHandle,
             msg: *const u8,
             len: isize,
             ret: i32,
@@ -112,12 +112,12 @@ impl OF {
         }
     }
 
-    pub fn find_device(&self, name: &str) -> Result<*mut OFpHandle, &'static str> {
+    pub fn find_device(&self, name: &str) -> Result<*const OFpHandle, &'static str> {
         #[repr(C)]
         struct FindDeviceArgs {
             args: ServiceArgs,
             device: *mut u8,
-            phandle: *mut OFpHandle,
+            phandle: *const OFpHandle,
         }
 
         let mut args = FindDeviceArgs {
@@ -138,7 +138,7 @@ impl OF {
 
     pub fn get_property<T>(
         &self,
-        phandle: *mut OFpHandle,
+        phandle: *const OFpHandle,
         prop: &str,
         buf: *mut T,
         buflen: isize,
@@ -146,7 +146,7 @@ impl OF {
         #[repr(C)]
         struct PropArgs<T> {
             args: ServiceArgs,
-            phandle: *mut OFpHandle,
+            phandle: *const OFpHandle,
             prop: *const u8,
             buf: *const T,
             buflen: isize,
