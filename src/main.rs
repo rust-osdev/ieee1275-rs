@@ -16,6 +16,8 @@ static mut GLOBAL_OF: OF = OF {
     chosen: core::ptr::null_mut(),
 };
 
+const BUFSIZE: usize = 10000;
+
 extern crate alloc;
 
 #[panic_handler]
@@ -100,7 +102,7 @@ impl OF {
             },
             stdout: self.stdout,
             msg: msg.as_ptr(),
-            len: isize::try_from(msg.len()).unwrap(),
+            len: msg.len() as isize,
             ret: 0,
         };
 
@@ -250,6 +252,41 @@ impl OF {
             false => Ok(args.handle),
         }
     }
+
+    fn read(
+        &self,
+        handle: *const OFiHandle,
+        buffer: *mut u8,
+        size: isize,
+    ) -> Result<isize, &'static str> {
+        #[repr(C)]
+        struct ReadArgs {
+            args: ServiceArgs,
+            handle: *const OFiHandle,
+            buffer: *const u8,
+            size: isize,
+            actual_size: isize,
+        }
+
+        let mut args = ReadArgs {
+            args: ServiceArgs {
+                service: "read\0".as_ptr(),
+                nargs: 3,
+                nret: 1,
+            },
+            handle,
+            buffer,
+            size,
+            actual_size: 0,
+        };
+
+        let _ = (self.entry_fn)(&mut args.args as *mut ServiceArgs);
+
+        match args.actual_size {
+            -1 => Err("Could not read device"),
+            _ => Ok(args.actual_size),
+        }
+    }
 }
 
 unsafe impl core::alloc::GlobalAlloc for OF {
@@ -283,7 +320,7 @@ extern "C" fn _start(_r3: u32, _r4: u32, entry: extern "C" fn(*mut ServiceArgs) 
     let _ =
         of.write_stdout(string::String::from("Hello from Rust into Open Firmware\n\r").as_str());
 
-    let mut buf: [u8; 500] = [0; 500];
+    let mut buf: [u8; BUFSIZE] = [0; BUFSIZE];
 
     let _size = of
         .get_property(
@@ -293,17 +330,46 @@ extern "C" fn _start(_r3: u32, _r4: u32, entry: extern "C" fn(*mut ServiceArgs) 
             buf.len() as isize,
         )
         .unwrap();
-    let mut dev_path = unsafe { string::String::from_raw_parts(&mut buf as *mut u8, 100, 100) };
-    dev_path.push('\0');
+    let mut dev_path = string::String::new();
+    for c in buf {
+        if c == 0 {
+            break;
+        }
+        dev_path.push(c as char);
+    }
+    dev_path.push_str(":1,\\test\\foo.txt\0");
 
-    match of.open(&dev_path) {
+    let file_handle = match of.open(&dev_path) {
         Err(msg) => {
             let _ = of.write_stdout(msg);
+            let _ = of.write_stdout("\n\r");
+            of.exit();
         }
-        Ok(_phandle) => {
+        Ok(file_handle) => {
             let _ = of.write_stdout("device open\n\r");
+            file_handle
         }
     };
+
+    buf = [0; BUFSIZE];
+    let mut content: alloc::vec::Vec<u8> = alloc::vec::Vec::new();
+    match of.read(file_handle, &mut buf as *mut u8, BUFSIZE as isize) {
+        Err(msg) => {
+            let _ = of.write_stdout(msg);
+            let _ = of.write_stdout("\n\r");
+        }
+        Ok(read_size) => {
+            let limit = read_size as usize;
+            content.extend_from_slice(&buf[0..limit]);
+        }
+    };
+    content.push(0);
+
+    let content = unsafe {
+        string::String::from_raw_parts(content.as_mut_ptr(), content.len(), content.len())
+    };
+
+    let _ = of.write_stdout(&content);
 
     of.exit()
 }
