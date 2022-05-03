@@ -289,6 +289,28 @@ impl OF {
             _ => Ok(args.actual_size),
         }
     }
+
+    fn close(&self, handle: *const OFiHandle) -> Result<(), &'static str> {
+        #[repr(C)]
+        struct CloseArgs {
+            args: ServiceArgs,
+            handle: *const OFiHandle,
+        }
+
+        let mut args = CloseArgs {
+            args: ServiceArgs {
+                service: "close\0".as_ptr(),
+                nargs: 1,
+                nret: 0,
+            },
+            handle,
+        };
+
+        match (self.entry_fn)(&mut args.args as *mut ServiceArgs) {
+            -1 => Err("Could not close device"),
+            _ => Ok(()),
+        }
+    }
 }
 
 unsafe impl GlobalAlloc for OF {
@@ -338,18 +360,14 @@ extern "C" fn _start(_r3: u32, _r4: u32, entry: extern "C" fn(*mut ServiceArgs) 
         }
         dev_path.push(c as char);
     }
-    dev_path.push_str(":1,\\test\\foo.txt\0");
+    dev_path.push_str(":1,\\loader\\index.lst\0");
 
     let file_handle = match of.open(&dev_path) {
         Err(msg) => {
-            let _ = of.write_stdout(msg);
-            let _ = of.write_stdout("\n\r");
+            of.write_stdout("\n\r");
             of.exit();
         }
-        Ok(file_handle) => {
-            let _ = of.write_stdout("device open\n\r");
-            file_handle
-        }
+        Ok(file_handle) => file_handle,
     };
 
     buf = [0; BUFSIZE];
@@ -370,6 +388,10 @@ extern "C" fn _start(_r3: u32, _r4: u32, entry: extern "C" fn(*mut ServiceArgs) 
         unsafe { String::from_raw_parts(content.as_mut_ptr(), content.len(), content.len()) };
 
     let _ = of.write_stdout(&content);
+    if let Err(msg) = of.close(file_handle) {
+        let _ = of.write_stdout(msg);
+        let _ = of.write_stdout("\n\r");
+    }
 
     of.exit()
 }
