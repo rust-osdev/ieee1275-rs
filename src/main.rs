@@ -2,7 +2,7 @@
 #![no_main]
 #![feature(default_alloc_error_handler)]
 
-use alloc::string;
+use alloc::string::String;
 use core::panic::PanicInfo;
 
 extern "C" fn fallback_entry(_args: *mut ServiceArgs) -> isize {
@@ -317,8 +317,7 @@ extern "C" fn _start(_r3: u32, _r4: u32, entry: extern "C" fn(*mut ServiceArgs) 
         GLOBAL_OF = of;
     };
 
-    let _ =
-        of.write_stdout(string::String::from("Hello from Rust into Open Firmware\n\r").as_str());
+    let _ = of.write_stdout(String::from("Hello from Rust into Open Firmware\n\r").as_str());
 
     let mut buf: [u8; BUFSIZE] = [0; BUFSIZE];
 
@@ -330,7 +329,7 @@ extern "C" fn _start(_r3: u32, _r4: u32, entry: extern "C" fn(*mut ServiceArgs) 
             buf.len() as isize,
         )
         .unwrap();
-    let mut dev_path = string::String::new();
+    let mut dev_path = String::new();
     for c in buf {
         if c == 0 {
             break;
@@ -365,9 +364,8 @@ extern "C" fn _start(_r3: u32, _r4: u32, entry: extern "C" fn(*mut ServiceArgs) 
     };
     content.push(0);
 
-    let content = unsafe {
-        string::String::from_raw_parts(content.as_mut_ptr(), content.len(), content.len())
-    };
+    let content =
+        unsafe { String::from_raw_parts(content.as_mut_ptr(), content.len(), content.len()) };
 
     let _ = of.write_stdout(&content);
 
