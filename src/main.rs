@@ -3,6 +3,7 @@
 #![feature(default_alloc_error_handler)]
 
 use alloc::string::String;
+use core::alloc::{GlobalAlloc, Layout};
 use core::panic::PanicInfo;
 use core::ptr;
 
@@ -290,8 +291,8 @@ impl OF {
     }
 }
 
-unsafe impl core::alloc::GlobalAlloc for OF {
-    unsafe fn alloc(&self, layout: core::alloc::Layout) -> *mut u8 {
+unsafe impl GlobalAlloc for OF {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         match self.claim(layout.size(), layout.align()) {
             Ok(ret) => ret,
             Err(msg) => {
@@ -300,7 +301,7 @@ unsafe impl core::alloc::GlobalAlloc for OF {
         }
     }
 
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: core::alloc::Layout) {
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         self.release(ptr, layout.size());
     }
 }
