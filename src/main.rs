@@ -2,6 +2,7 @@
 #![no_main]
 #![feature(default_alloc_error_handler)]
 
+use alloc::string;
 use core::panic::PanicInfo;
 
 extern "C" fn fallback_entry(_args: *mut ServiceArgs) -> isize {
@@ -22,7 +23,6 @@ fn panic(_panic: &PanicInfo<'_>) -> ! {
     unsafe {
         GLOBAL_OF.exit();
     }
-    loop {}
 }
 
 #[repr(C)]
@@ -59,7 +59,7 @@ impl OF {
     fn init(&mut self) -> Result<(), &'static str> {
         let chosen = self.find_device("/chosen\0")?;
         let mut stdout: *mut OFiHandle = core::ptr::null_mut();
-        self.get_property(
+        let _ = self.get_property(
             chosen,
             "stdout\0",
             &mut stdout as *mut *mut OFiHandle,
@@ -71,7 +71,7 @@ impl OF {
         Ok(())
     }
 
-    pub fn exit(&self) {
+    pub fn exit(&self) -> ! {
         let mut args = ServiceArgs {
             service: "exit\0".as_ptr(),
             nargs: 1,
@@ -79,6 +79,7 @@ impl OF {
         };
 
         (self.entry_fn)(&mut args as *mut ServiceArgs);
+        loop {}
     }
 
     pub fn write_stdout(&self, msg: &str) -> Result<(), &'static str> {
@@ -141,7 +142,7 @@ impl OF {
         prop: &str,
         buf: *mut T,
         buflen: isize,
-    ) -> Result<(), &'static str> {
+    ) -> Result<isize, &'static str> {
         #[repr(C)]
         struct PropArgs<T> {
             args: ServiceArgs,
@@ -167,7 +168,7 @@ impl OF {
 
         match (self.entry_fn)(&mut args.args as *mut ServiceArgs) {
             -1 => Err("Could not retreive property"),
-            _ => Ok(()),
+            _ => Ok(args.size),
         }
     }
 
@@ -223,6 +224,63 @@ impl OF {
 
         let _ = (self.entry_fn)(&mut args.args as *mut ServiceArgs);
     }
+
+    fn open(&self, dev_spec: &str) -> Result<*const OFiHandle, &'static str> {
+        #[repr(C)]
+        struct ReleaseArgs {
+            args: ServiceArgs,
+            dev: *const u8,
+            handle: *const OFiHandle,
+        }
+
+        let mut args = ReleaseArgs {
+            args: ServiceArgs {
+                service: "open\0".as_ptr(),
+                nargs: 1,
+                nret: 1,
+            },
+            dev: dev_spec.as_ptr(),
+            handle: core::ptr::null(),
+        };
+
+        let _ = (self.entry_fn)(&mut args.args as *mut ServiceArgs);
+
+        match args.handle.is_null() {
+            true => Err("Could not open device"),
+            false => Ok(args.handle),
+        }
+    }
+
+    fn read(
+        &self,
+        handle: *mut OFiHandle,
+        buffer: *mut u8,
+        size: isize,
+    ) -> Result<isize, &'static str> {
+        #[repr(C)]
+        struct ReleaseArgs {
+            args: ServiceArgs,
+            handle: *const OFiHandle,
+            buf: *mut u8,
+            size: isize,
+            actual_size: isize,
+        }
+
+        let mut args = ReleaseArgs {
+            args: ServiceArgs {
+                service: "read\0".as_ptr(),
+                nargs: 3,
+                nret: 1,
+            },
+        };
+
+        let _ = (self.entry_fn)(&mut args.args as *mut ServiceArgs);
+
+        match args.handle.is_null() {
+            true => Err("Could not open device"),
+            false => Ok(args.handle),
+        }
+    }
 }
 
 unsafe impl core::alloc::GlobalAlloc for OF {
@@ -253,6 +311,29 @@ extern "C" fn _start(_r3: u32, _r4: u32, entry: extern "C" fn(*mut ServiceArgs) 
         GLOBAL_OF = of;
     };
 
-    let _ = of.write_stdout(alloc::string::String::from("Hello from Rust into Open Firmware").as_str());
-    loop {}
+    let _ = of.write_stdout(string::String::from("Hello from Rust into Open Firmware").as_str());
+
+    let mut buf: [u8; 500] = [0; 500];
+
+    let _size = of
+        .get_property(
+            of.chosen,
+            "bootpath\0",
+            &mut buf as *mut u8,
+            buf.len() as isize,
+        )
+        .unwrap();
+    let mut dev_path = unsafe { string::String::from_raw_parts(&mut buf as *mut u8, 100, 100) };
+    dev_path.push('\0');
+
+    match of.open(&dev_path) {
+        Err(msg) => {
+            let _ = of.write_stdout(msg);
+        }
+        Ok(_phandle) => {
+            let _ = of.write_stdout("device open\n");
+        }
+    };
+
+    of.exit()
 }
