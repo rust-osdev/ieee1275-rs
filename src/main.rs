@@ -4,6 +4,7 @@
 
 use alloc::string::String;
 use core::panic::PanicInfo;
+use core::ptr;
 
 extern "C" fn fallback_entry(_args: *mut ServiceArgs) -> isize {
     -1
@@ -12,8 +13,8 @@ extern "C" fn fallback_entry(_args: *mut ServiceArgs) -> isize {
 #[global_allocator]
 static mut GLOBAL_OF: OF = OF {
     entry_fn: fallback_entry,
-    stdout: core::ptr::null_mut(),
-    chosen: core::ptr::null_mut(),
+    stdout: ptr::null_mut(),
+    chosen: ptr::null_mut(),
 };
 
 const BUFSIZE: usize = 10000;
@@ -50,8 +51,8 @@ impl OF {
     fn new(entry: extern "C" fn(*mut ServiceArgs) -> isize) -> Result<Self, &'static str> {
         let mut ret = OF {
             entry_fn: entry,
-            chosen: core::ptr::null_mut(),
-            stdout: core::ptr::null_mut(),
+            chosen: ptr::null_mut(),
+            stdout: ptr::null_mut(),
         };
 
         ret.init()?;
@@ -60,7 +61,7 @@ impl OF {
 
     fn init(&mut self) -> Result<(), &'static str> {
         let chosen = self.find_device("/chosen\0")?;
-        let mut stdout: *const OFiHandle = core::ptr::null_mut();
+        let mut stdout: *const OFiHandle = ptr::null_mut();
         let _ = self.get_property(
             chosen,
             "stdout\0",
@@ -129,7 +130,7 @@ impl OF {
                 nret: 1,
             },
             device: name.as_ptr() as *mut u8,
-            phandle: core::ptr::null_mut(),
+            phandle: ptr::null_mut(),
         };
 
         match (self.entry_fn)(&mut args.args as *mut ServiceArgs) {
@@ -194,10 +195,10 @@ impl OF {
                 nargs: 3,
                 nret: 1,
             },
-            virt: core::ptr::null_mut(),
+            virt: ptr::null_mut(),
             size,
             align,
-            ret: core::ptr::null_mut(),
+            ret: ptr::null_mut(),
         };
 
         match (self.entry_fn)(&mut args.args as *mut ServiceArgs) {
@@ -242,7 +243,7 @@ impl OF {
                 nret: 1,
             },
             dev: dev_spec.as_ptr(),
-            handle: core::ptr::null(),
+            handle: ptr::null(),
         };
 
         let _ = (self.entry_fn)(&mut args.args as *mut ServiceArgs);
