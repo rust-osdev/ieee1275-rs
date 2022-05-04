@@ -8,8 +8,10 @@ use core::alloc::{GlobalAlloc, Layout};
 use core::panic::PanicInfo;
 use core::ptr;
 
-extern "C" fn fallback_entry(_args: *mut ServiceArgs) -> isize {
-    -1
+const OF_SIZE_ERR: usize = usize::MAX;
+
+extern "C" fn fallback_entry(_args: *mut ServiceArgs) -> usize {
+    OF_SIZE_ERR
 }
 
 #[global_allocator]
@@ -31,26 +33,26 @@ fn panic(_panic: &PanicInfo<'_>) -> ! {
 }
 
 #[repr(C)]
-struct ServiceArgs {
+pub struct ServiceArgs {
     service: *const u8,
     nargs: usize,
     nret: usize,
 }
 #[repr(C)]
-struct OFpHandle {}
+pub struct OFpHandle {}
 
 #[repr(C)]
-struct OFiHandle {}
+pub struct OFiHandle {}
 
 #[derive(Clone, Copy)]
-struct OF {
-    entry_fn: extern "C" fn(*mut ServiceArgs) -> isize,
+pub struct OF {
+    entry_fn: extern "C" fn(*mut ServiceArgs) -> usize,
     pub chosen: *const OFpHandle,
     pub stdout: *const OFiHandle,
 }
 
 impl OF {
-    fn new(entry: extern "C" fn(*mut ServiceArgs) -> isize) -> Result<Self, &'static str> {
+    pub fn new(entry: extern "C" fn(*mut ServiceArgs) -> usize) -> Result<Self, &'static str> {
         let mut ret = OF {
             entry_fn: entry,
             chosen: ptr::null_mut(),
@@ -68,7 +70,7 @@ impl OF {
             chosen,
             "stdout\0",
             &mut stdout as *mut *const OFiHandle,
-            core::mem::size_of::<*const OFiHandle>() as isize,
+            core::mem::size_of::<*const OFiHandle>(),
         )?;
 
         self.stdout = stdout;
@@ -93,8 +95,8 @@ impl OF {
             args: ServiceArgs,
             stdout: *const OFiHandle,
             msg: *const u8,
-            len: isize,
-            ret: i32,
+            len: usize,
+            ret: usize,
         }
 
         let mut args = MsgArgs {
@@ -105,14 +107,14 @@ impl OF {
             },
             stdout: self.stdout,
             msg: msg.as_ptr(),
-            len: msg.len() as isize,
+            len: msg.len(),
             ret: 0,
         };
 
         (self.entry_fn)(&mut args.args as *mut ServiceArgs);
 
         match args.ret {
-            -1 => Err("Error escribiendo en stdout "),
+            OF_SIZE_ERR => Err("Error escribiendo en stdout "),
             _ => Ok(()),
         }
     }
@@ -141,7 +143,7 @@ impl OF {
         };
 
         match (self.entry_fn)(&mut args.args as *mut ServiceArgs) {
-            -1 => Err("Could not retreive property"),
+            OF_SIZE_ERR => Err("Could not retreive property"),
             _ => Ok(args.phandle),
         }
     }
@@ -151,16 +153,16 @@ impl OF {
         phandle: *const OFpHandle,
         prop: &str,
         buf: *mut T,
-        buflen: isize,
-    ) -> Result<isize, &'static str> {
+        buflen: usize,
+    ) -> Result<usize, &'static str> {
         #[repr(C)]
         struct PropArgs<T> {
             args: ServiceArgs,
             phandle: *const OFpHandle,
             prop: *const u8,
             buf: *const T,
-            buflen: isize,
-            size: isize,
+            buflen: usize,
+            size: usize,
         }
 
         let mut args = PropArgs {
@@ -177,12 +179,12 @@ impl OF {
         };
 
         match (self.entry_fn)(&mut args.args as *mut ServiceArgs) {
-            -1 => Err("Could not retreive property"),
+            OF_SIZE_ERR => Err("Could not retreive property"),
             _ => Ok(args.size),
         }
     }
 
-    fn claim(&self, size: usize, align: usize) -> Result<*mut u8, &'static str> {
+    pub fn claim(&self, size: usize, align: usize) -> Result<*mut u8, &'static str> {
         #[repr(C)]
         struct ClaimArgs {
             args: ServiceArgs,
@@ -209,12 +211,12 @@ impl OF {
         };
 
         match (self.entry_fn)(&mut args.args as *mut ServiceArgs) {
-            -1 => Err("Could not allocate memory"),
+            OF_SIZE_ERR => Err("Could not allocate memory"),
             _ => Ok(args.ret),
         }
     }
 
-    fn release(&self, virt: *mut u8, size: usize) {
+    pub fn release(&self, virt: *mut u8, size: usize) {
         #[repr(C)]
         struct ReleaseArgs {
             args: ServiceArgs,
@@ -235,7 +237,7 @@ impl OF {
         let _ = (self.entry_fn)(&mut args.args as *mut ServiceArgs);
     }
 
-    fn open(&self, dev_spec: &str) -> Result<*const OFiHandle, &'static str> {
+    pub fn open(&self, dev_spec: &str) -> Result<*const OFiHandle, &'static str> {
         #[repr(C)]
         struct OpenArgs {
             args: ServiceArgs,
@@ -261,19 +263,19 @@ impl OF {
         }
     }
 
-    fn read(
+    pub fn read(
         &self,
         handle: *const OFiHandle,
         buffer: *mut u8,
-        size: isize,
-    ) -> Result<isize, &'static str> {
+        size: usize,
+    ) -> Result<usize, &'static str> {
         #[repr(C)]
         struct ReadArgs {
             args: ServiceArgs,
             handle: *const OFiHandle,
             buffer: *const u8,
-            size: isize,
-            actual_size: isize,
+            size: usize,
+            actual_size: usize,
         }
 
         let mut args = ReadArgs {
@@ -291,12 +293,12 @@ impl OF {
         let _ = (self.entry_fn)(&mut args.args as *mut ServiceArgs);
 
         match args.actual_size {
-            -1 => Err("Could not read device"),
+            OF_SIZE_ERR => Err("Could not read device"),
             _ => Ok(args.actual_size),
         }
     }
 
-    fn close(&self, handle: *const OFiHandle) -> Result<(), &'static str> {
+    pub fn close(&self, handle: *const OFiHandle) -> Result<(), &'static str> {
         #[repr(C)]
         struct CloseArgs {
             args: ServiceArgs,
@@ -313,7 +315,7 @@ impl OF {
         };
 
         match (self.entry_fn)(&mut args.args as *mut ServiceArgs) {
-            -1 => Err("Could not close device"),
+            OF_SIZE_ERR => Err("Could not close device"),
             _ => Ok(()),
         }
     }
@@ -334,12 +336,18 @@ unsafe impl GlobalAlloc for OF {
     }
 }
 
-#[no_mangle]
-#[link_section = ".text"]
-extern "C" fn _start(_r3: u32, _r4: u32, entry: extern "C" fn(*mut ServiceArgs) -> isize) -> isize {
+pub fn of_init(entry: extern "C" fn(*mut ServiceArgs) -> usize) -> OF {
     let of = match OF::new(entry) {
         Ok(of) => of,
-        Err(_) => return -1,
+        Err(_) => {
+            let mut args = ServiceArgs {
+                service: "exit\0".as_ptr(),
+                nargs: 0,
+                nret: 0,
+            };
+            let _ = entry(&mut args as *mut ServiceArgs);
+            loop {}
+        }
     };
 
     // WARNING: DO NOT USE alloc:: before this point
@@ -347,17 +355,19 @@ extern "C" fn _start(_r3: u32, _r4: u32, entry: extern "C" fn(*mut ServiceArgs) 
         GLOBAL_OF = of;
     };
 
-    let _ = of.write_stdout(String::from("Hello from Rust into Open Firmware\n\r").as_str());
+    of
+}
+
+#[no_mangle]
+#[link_section = ".text"]
+extern "C" fn _start(_r3: u32, _r4: u32, entry: extern "C" fn(*mut ServiceArgs) -> usize) -> isize {
+    let of = of_init(entry);
+    of.write_line(String::from("Hello from Rust into Open Firmware\n\r").as_str());
 
     let mut buf: [u8; BUFSIZE] = [0; BUFSIZE];
 
     let _size = of
-        .get_property(
-            of.chosen,
-            "bootpath\0",
-            &mut buf as *mut u8,
-            buf.len() as isize,
-        )
+        .get_property(of.chosen, "bootpath\0", &mut buf as *mut u8, buf.len())
         .unwrap();
     let mut dev_path = String::new();
     for c in buf {
@@ -377,14 +387,14 @@ extern "C" fn _start(_r3: u32, _r4: u32, entry: extern "C" fn(*mut ServiceArgs) 
     };
 
     buf = [0; BUFSIZE];
-    let content = match of.read(file_handle, &mut buf as *mut u8, BUFSIZE as isize) {
+    let content = match of.read(file_handle, &mut buf as *mut u8, BUFSIZE) {
         Err(msg) => {
             of.write_line(msg);
             of.exit();
         }
         Ok(read_size) => {
             let mut content: Vec<u8> = Vec::new();
-            content.extend_from_slice(&mut buf[0..read_size as usize]);
+            content.extend_from_slice(&mut buf[0..read_size]);
             unsafe { String::from_raw_parts(buf.as_mut_ptr(), content.len(), content.capacity()) }
         }
     };
