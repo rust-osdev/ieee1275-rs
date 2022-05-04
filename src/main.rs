@@ -3,6 +3,7 @@
 #![feature(default_alloc_error_handler)]
 
 use alloc::string::String;
+use alloc::vec::Vec;
 use core::alloc::{GlobalAlloc, Layout};
 use core::panic::PanicInfo;
 use core::ptr;
@@ -114,6 +115,11 @@ impl OF {
             -1 => Err("Error escribiendo en stdout "),
             _ => Ok(()),
         }
+    }
+
+    pub fn write_line(&self, msg: &str) {
+        let _ = self.write_stdout(msg);
+        let _ = self.write_stdout("\n\r");
     }
 
     pub fn find_device(&self, name: &str) -> Result<*const OFpHandle, &'static str> {
@@ -364,33 +370,28 @@ extern "C" fn _start(_r3: u32, _r4: u32, entry: extern "C" fn(*mut ServiceArgs) 
 
     let file_handle = match of.open(&dev_path) {
         Err(msg) => {
-            of.write_stdout("\n\r");
+            of.write_line(msg);
             of.exit();
         }
         Ok(file_handle) => file_handle,
     };
 
     buf = [0; BUFSIZE];
-    let mut content: alloc::vec::Vec<u8> = alloc::vec::Vec::new();
-    match of.read(file_handle, &mut buf as *mut u8, BUFSIZE as isize) {
+    let content = match of.read(file_handle, &mut buf as *mut u8, BUFSIZE as isize) {
         Err(msg) => {
-            let _ = of.write_stdout(msg);
-            let _ = of.write_stdout("\n\r");
+            of.write_line(msg);
+            of.exit();
         }
         Ok(read_size) => {
-            let limit = read_size as usize;
-            content.extend_from_slice(&buf[0..limit]);
+            let mut content: Vec<u8> = Vec::new();
+            content.extend_from_slice(&mut buf[0..read_size as usize]);
+            unsafe { String::from_raw_parts(buf.as_mut_ptr(), content.len(), content.capacity()) }
         }
     };
-    content.push(0);
 
-    let content =
-        unsafe { String::from_raw_parts(content.as_mut_ptr(), content.len(), content.len()) };
-
-    let _ = of.write_stdout(&content);
+    of.write_line(&content);
     if let Err(msg) = of.close(file_handle) {
-        let _ = of.write_stdout(msg);
-        let _ = of.write_stdout("\n\r");
+        of.write_line(msg);
     }
 
     of.exit()
