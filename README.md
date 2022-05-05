@@ -7,15 +7,17 @@ For now this project is only targetting PowerVM/POWER environments as well as QE
 
 ## Build instructions
 
+To build sample bootloader payload, use the crate under the ```template`` directory.
+
 This is configured as a cross compilation crate by default. The output binaries are required to be PPC32bit big endian. You need a working powerpc gcc compiler, you may need to tweak ```.cargo/config``` to point to the right binaries.
 
-You also need to install the powerpc nightly target:
+You also need to install the powerpc targe using ```rustup```t:
 
-```$ rustup target add powerpc-unknown-linux-gnu --toolchain nightly```
+```$ rustup target add powerpc-unknown-linux-gnu```
 
-To create a valid build you need to use --release, debug builds will fail (investigating as to why yet):
+To create a valid build you need to use --release, debug builds will fail (not clear why yet):
 
-```$ cargo +nightly build --relaase --target powerpc-unknown-linux-gnu```
+```$ cargo build --release --target powerpc-unknown-linux-gnu```
 
 ## Testing
 
@@ -51,7 +53,7 @@ $ sudo losetup -P -f disk.img
 $ losetup -a
 $ sudo losetup -a
 /dev/loop0: [0043]:2771583 (/path/to/disk.img)
-$ sudo dd if=target/powerpc-unknown-linux-gnu/release/of-rs of=/dev/loop0p1
+$ sudo dd if=target/powerpc-unknown-linux-gnu/release/of-rs-template of=/dev/loop0p1
 ```
 
 And finally we need to launch QEMU:
