@@ -3,7 +3,7 @@ name = "ieee1275-rs"
 version = "0.0.1"
 edition = "2021"
 authors = ["Alberto Ruiz <aruiz@redhat.com>"]
-repository = "https://gitlab.com/aruiz/of-rs"
+repository = "https://gitlab.com/aruiz/ieee1275-rs"
 license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
