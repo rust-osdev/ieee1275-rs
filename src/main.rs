@@ -32,26 +32,39 @@ fn panic(_panic: &PanicInfo<'_>) -> ! {
     }
 }
 
+/// Header for Service Arguments
 #[repr(C)]
 pub struct ServiceArgs {
     service: *const u8,
     nargs: usize,
     nret: usize,
 }
+
+/// Opaque type to represent a package handle
 #[repr(C)]
 pub struct OFpHandle {}
 
+/// Opaque type to represent a package instance handle
 #[repr(C)]
 pub struct OFiHandle {}
 
+/// OF represents an Open Firmware environment
 #[derive(Clone, Copy)]
 pub struct OF {
+    /// Entry function into the Open Firmware services
     entry_fn: extern "C" fn(*mut ServiceArgs) -> usize,
+    /// Package handle into '/chosen' which holds parameters chosen at runtime
     pub chosen: *const OFpHandle,
+    /// Instance handle into stdout
     pub stdout: *const OFiHandle,
 }
 
 impl OF {
+    /// Creates a new OF instance from a valid entry point
+    ///
+    /// # Errors
+    ///
+    /// If it fails on initalization of ```chosen``` and ```stdout``` it will return an error
     pub fn new(entry: extern "C" fn(*mut ServiceArgs) -> usize) -> Result<Self, &'static str> {
         let mut ret = OF {
             entry_fn: entry,
@@ -78,6 +91,7 @@ impl OF {
         Ok(())
     }
 
+    /// Exits the client program back into Open Firmware
     pub fn exit(&self) -> ! {
         let mut args = ServiceArgs {
             service: "exit\0".as_ptr(),
@@ -89,6 +103,7 @@ impl OF {
         loop {}
     }
 
+    /// Writes a string into stdout
     pub fn write_stdout(&self, msg: &str) -> Result<(), &'static str> {
         #[repr(C)]
         struct MsgArgs {
@@ -114,16 +129,18 @@ impl OF {
         (self.entry_fn)(&mut args.args as *mut ServiceArgs);
 
         match args.ret {
-            OF_SIZE_ERR => Err("Error escribiendo en stdout "),
+            OF_SIZE_ERR => Err("Error writing stdout"),
             _ => Ok(()),
         }
     }
 
+    /// Writes a str into stdout and ends with a newline
     pub fn write_line(&self, msg: &str) {
         let _ = self.write_stdout(msg);
         let _ = self.write_stdout("\n\r");
     }
 
+    /// Finds a device from a null terminated string
     pub fn find_device(&self, name: &str) -> Result<*const OFpHandle, &'static str> {
         #[repr(C)]
         struct FindDeviceArgs {
@@ -148,6 +165,18 @@ impl OF {
         }
     }
 
+    /// Get property from package
+    ///
+    /// # Arguments
+    ///
+    /// ```phandle```: package handle
+    /// ```prop```: null terminated property name
+    /// ```buf```: pointer to buffer to store the value of the property, note that it has to match the known size of the property
+    /// ```buflen```: length of ```buf```
+    ///
+    /// # Retuns
+    ///
+    /// The actual amount of bytes written
     pub fn get_property<T>(
         &self,
         phandle: *const OFpHandle,
@@ -184,6 +213,12 @@ impl OF {
         }
     }
 
+    /// Allocate heap memory
+    ///
+    /// # Arguments
+    ///
+    /// ```size```: The amount of bytes to be allocated
+    /// ```align```: The byte alignment boundary, must be graeter than 0
     pub fn claim(&self, size: usize, align: usize) -> Result<*mut u8, &'static str> {
         #[repr(C)]
         struct ClaimArgs {
@@ -216,6 +251,7 @@ impl OF {
         }
     }
 
+    /// Release allocated heap memory by the ```claim``` method
     pub fn release(&self, virt: *mut u8, size: usize) {
         #[repr(C)]
         struct ReleaseArgs {
@@ -237,6 +273,15 @@ impl OF {
         let _ = (self.entry_fn)(&mut args.args as *mut ServiceArgs);
     }
 
+    /// Opens a device from a spec
+    ///
+    /// # Arguments
+    ///
+    /// ```dev_spec```: The device specifier, must be a null terminated string
+    ///
+    /// # Returns
+    ///
+    /// Pointer to the device's package instance handle on success
     pub fn open(&self, dev_spec: &str) -> Result<*const OFiHandle, &'static str> {
         #[repr(C)]
         struct OpenArgs {
@@ -263,6 +308,17 @@ impl OF {
         }
     }
 
+    /// Read operation
+    ///
+    /// # Arguments
+    ///
+    /// ```handle```: Instance handle
+    /// ```buffer```: Output buffer to write the read content
+    /// ```size```: Size in bytes of the output buffer
+    ///
+    /// # Returns
+    ///
+    /// Number of bytes read into ```buffer```
     pub fn read(
         &self,
         handle: *const OFiHandle,
