@@ -109,6 +109,10 @@ impl OF {
             ret: usize,
         }
 
+        if self.stdout.is_null() {
+            return Err("stdout is not present");
+        }
+
         let mut args = MsgArgs {
             args: ServiceArgs {
                 service: "write\0".as_ptr(),
