@@ -391,6 +391,7 @@ unsafe impl GlobalAlloc for OF {
     }
 }
 
+/// This function intializes the Open Firmware environment object globally
 pub fn of_init(entry: extern "C" fn(*mut ServiceArgs) -> usize) -> OF {
     let of = match OF::new(entry) {
         Ok(of) => of,
