@@ -9,7 +9,7 @@ categories = ["embedded", "no-std", "api-bindings"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[dependencies]
+[target.powerpc-unknown-linux-gnu.dependencies]
 compiler_builtins = { version = "0.1", features = ["mem"] }
 
 [profile.dev]
@@ -19,3 +19,6 @@ strip = true
 [profile.release]
 panic = "abort"
 strip = true
+
+[features]
+no_panic_handler = []

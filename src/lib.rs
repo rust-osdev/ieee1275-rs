@@ -20,6 +20,7 @@ static mut GLOBAL_PROM: PROM = PROM {
 
 extern crate alloc;
 
+#[cfg(not(feature = "no_panic_handler"))]
 #[panic_handler]
 fn panic(_panic: &PanicInfo<'_>) -> ! {
     unsafe {
