@@ -12,7 +12,7 @@ extern "C" fn fallback_entry(_args: *mut ServiceArgs) -> usize {
 }
 
 #[global_allocator]
-static mut GLOBAL_OF: OF = OF {
+static mut GLOBAL_PROM: PROM = PROM {
     entry_fn: fallback_entry,
     stdout: ptr::null_mut(),
     chosen: ptr::null_mut(),
@@ -23,7 +23,7 @@ extern crate alloc;
 #[panic_handler]
 fn panic(_panic: &PanicInfo<'_>) -> ! {
     unsafe {
-        GLOBAL_OF.exit();
+        GLOBAL_PROM.exit();
     }
 }
 
@@ -37,31 +37,31 @@ pub struct ServiceArgs {
 
 /// Opaque type to represent a package handle
 #[repr(C)]
-pub struct OFpHandle {}
+pub struct PHandle {}
 
 /// Opaque type to represent a package instance handle
 #[repr(C)]
-pub struct OFiHandle {}
+pub struct IHandle {}
 
 /// OF represents an Open Firmware environment
 #[derive(Clone, Copy)]
-pub struct OF {
+pub struct PROM {
     /// Entry function into the Open Firmware services
     entry_fn: extern "C" fn(*mut ServiceArgs) -> usize,
     /// Package handle into '/chosen' which holds parameters chosen at runtime
-    pub chosen: *const OFpHandle,
+    pub chosen: *const PHandle,
     /// Instance handle into stdout
-    pub stdout: *const OFiHandle,
+    pub stdout: *const IHandle,
 }
 
-impl OF {
+impl PROM {
     /// Creates a new OF instance from a valid entry point
     ///
     /// # Errors
     ///
     /// If it fails on initalization of ```chosen``` and ```stdout``` it will return an error
     pub fn new(entry: extern "C" fn(*mut ServiceArgs) -> usize) -> Result<Self, &'static str> {
-        let mut ret = OF {
+        let mut ret = PROM {
             entry_fn: entry,
             chosen: ptr::null_mut(),
             stdout: ptr::null_mut(),
@@ -73,12 +73,12 @@ impl OF {
 
     fn init(&mut self) -> Result<(), &'static str> {
         let chosen = self.find_device("/chosen\0")?;
-        let mut stdout: *const OFiHandle = ptr::null_mut();
+        let mut stdout: *const IHandle = ptr::null_mut();
         let _ = self.get_property(
             chosen,
             "stdout\0",
-            &mut stdout as *mut *const OFiHandle,
-            core::mem::size_of::<*const OFiHandle>(),
+            &mut stdout as *mut *const IHandle,
+            core::mem::size_of::<*const IHandle>(),
         )?;
 
         self.stdout = stdout;
@@ -103,7 +103,7 @@ impl OF {
         #[repr(C)]
         struct MsgArgs {
             args: ServiceArgs,
-            stdout: *const OFiHandle,
+            stdout: *const IHandle,
             msg: *const u8,
             len: usize,
             ret: usize,
@@ -140,12 +140,12 @@ impl OF {
     }
 
     /// Finds a device from a null terminated string
-    pub fn find_device(&self, name: &str) -> Result<*const OFpHandle, &'static str> {
+    pub fn find_device(&self, name: &str) -> Result<*const PHandle, &'static str> {
         #[repr(C)]
         struct FindDeviceArgs {
             args: ServiceArgs,
             device: *mut u8,
-            phandle: *const OFpHandle,
+            phandle: *const PHandle,
         }
 
         let mut args = FindDeviceArgs {
@@ -178,7 +178,7 @@ impl OF {
     /// The actual amount of bytes written
     pub fn get_property<T>(
         &self,
-        phandle: *const OFpHandle,
+        phandle: *const PHandle,
         prop: &str,
         buf: *mut T,
         buflen: usize,
@@ -186,7 +186,7 @@ impl OF {
         #[repr(C)]
         struct PropArgs<T> {
             args: ServiceArgs,
-            phandle: *const OFpHandle,
+            phandle: *const PHandle,
             prop: *const u8,
             buf: *const T,
             buflen: usize,
@@ -281,12 +281,12 @@ impl OF {
     /// # Returns
     ///
     /// Pointer to the device's package instance handle on success
-    pub fn open(&self, dev_spec: &str) -> Result<*const OFiHandle, &'static str> {
+    pub fn open(&self, dev_spec: &str) -> Result<*const IHandle, &'static str> {
         #[repr(C)]
         struct OpenArgs {
             args: ServiceArgs,
             dev: *const u8,
-            handle: *const OFiHandle,
+            handle: *const IHandle,
         }
 
         let mut args = OpenArgs {
@@ -320,14 +320,14 @@ impl OF {
     /// Number of bytes read into ```buffer```
     pub fn read(
         &self,
-        handle: *const OFiHandle,
+        handle: *const IHandle,
         buffer: *mut u8,
         size: usize,
     ) -> Result<usize, &'static str> {
         #[repr(C)]
         struct ReadArgs {
             args: ServiceArgs,
-            handle: *const OFiHandle,
+            handle: *const IHandle,
             buffer: *const u8,
             size: usize,
             actual_size: usize,
@@ -353,11 +353,11 @@ impl OF {
         }
     }
 
-    pub fn close(&self, handle: *const OFiHandle) -> Result<(), &'static str> {
+    pub fn close(&self, handle: *const IHandle) -> Result<(), &'static str> {
         #[repr(C)]
         struct CloseArgs {
             args: ServiceArgs,
-            handle: *const OFiHandle,
+            handle: *const IHandle,
         }
 
         let mut args = CloseArgs {
@@ -376,7 +376,7 @@ impl OF {
     }
 }
 
-unsafe impl GlobalAlloc for OF {
+unsafe impl GlobalAlloc for PROM {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         match self.claim(layout.size(), layout.align()) {
             Ok(ret) => ret,
@@ -392,9 +392,9 @@ unsafe impl GlobalAlloc for OF {
 }
 
 /// This function intializes the Open Firmware environment object globally
-pub fn of_init(entry: extern "C" fn(*mut ServiceArgs) -> usize) -> OF {
-    let of = match OF::new(entry) {
-        Ok(of) => of,
+pub fn prom_init(entry: extern "C" fn(*mut ServiceArgs) -> usize) -> PROM {
+    let prom = match PROM::new(entry) {
+        Ok(prom) => prom,
         Err(_) => {
             let mut args = ServiceArgs {
                 service: "exit\0".as_ptr(),
@@ -408,8 +408,8 @@ pub fn of_init(entry: extern "C" fn(*mut ServiceArgs) -> usize) -> OF {
 
     // WARNING: DO NOT USE alloc:: before this point
     unsafe {
-        GLOBAL_OF = of;
+        GLOBAL_PROM = prom;
     };
 
-    of
+    prom
 }
