@@ -117,28 +117,28 @@ mod tests {
                 heap_ref.heap = Some(HashMap::new());
             }
 
-            match &mut heap_ref.heap {
-                Some(heap) => {
-                    let mut array = vec![0 as u8; args.size];
-                    args.ret = array.as_mut_ptr();
-                    heap.insert(args.ret, array);
-                    unsafe { std::mem::transmute(args.ret) }
-                }
-                _ => {
-                    args.ret = unsafe { std::mem::transmute(usize::MAX) };
-                    usize::MAX
-                }
+            if args.size == usize::MAX {
+                args.ret = unsafe { std::mem::transmute(usize::MAX) };
+                return usize::MAX;
             }
+
+            let heap = heap_ref.heap.as_mut().unwrap();
+            let mut array = vec![0 as u8; args.size];
+            args.ret = array.as_mut_ptr();
+            heap.insert(args.ret, array);
+            unsafe { std::mem::transmute(args.ret) }
         }
 
         fn release(&self, args: *mut Args) -> usize {
             let args = cast_args::<services::ReleaseArgs>(args);
-            let mock_ref = unsafe { &mut MOCK };
             let heap_ref = unsafe { &mut HEAP };
 
             if heap_ref.heap.is_none() {
-                return usize::MAX;
+                return 0;
             }
+
+            let heap = heap_ref.heap.as_mut().unwrap();
+            let _ = heap.remove(&args.virt);
 
             0
         }
@@ -176,6 +176,8 @@ mod tests {
             mock_ref.write(args)
         } else if service.starts_with(b"claim\0") {
             mock_ref.claim(args)
+        } else if service.starts_with(b"release\0") {
+            mock_ref.release(args)
         } else {
             usize::MAX
         }
@@ -205,17 +207,19 @@ mod tests {
         let prom = PROM::new(mock_entry).unwrap();
         let heap = unsafe { &mut HEAP };
 
-        let ret = prom.claim(4, 1);
+        const ALLOC_LENGHT: usize = 4;
+
+        let ret = prom.claim(ALLOC_LENGHT, 1);
         assert!(ret.is_ok());
-        let buffer = ret.unwrap();
+        let buffer_ptr = ret.unwrap();
 
         // When we call prom.claim() the Heap gets created if it doesn't exists so this is always safe
         let heap = heap.heap.as_ref().unwrap();
-        let memchunk = heap.get(&buffer);
+        let memchunk = heap.get(&buffer_ptr);
         assert!(memchunk.is_some(), "Heap did not find returned address");
         let memchunk = memchunk.unwrap();
 
-        let buffer = unsafe { std::slice::from_raw_parts_mut(buffer, 4) };
+        let buffer = unsafe { std::slice::from_raw_parts_mut(buffer_ptr, ALLOC_LENGHT) };
         buffer[0] = 1 as u8;
         buffer[1] = 2 as u8;
         buffer[2] = 3 as u8;
@@ -223,7 +227,15 @@ mod tests {
 
         assert_eq!(
             memchunk as &[u8], buffer,
-            "Allocated memory did not point to the same area"
+            "Allocated memory did not point to the same area {:#?}",
+            heap
+        );
+
+        prom.release(buffer_ptr, ALLOC_LENGHT);
+        assert!(
+            heap.get(&buffer_ptr).is_none(),
+            "Heap did not get empty after prom.release() {:#?}",
+            heap
         );
     }
 }
