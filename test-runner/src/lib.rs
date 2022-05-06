@@ -4,7 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT.
 
-extern crate ieee1275_rs;
+extern crate ieee1275;
 
 #[cfg(test)]
 mod tests {
@@ -14,7 +14,7 @@ mod tests {
         usize,
     };
 
-    use ieee1275_rs::{
+    use ieee1275::{
         services,
         services::{Args},
         PHandle, PROM,

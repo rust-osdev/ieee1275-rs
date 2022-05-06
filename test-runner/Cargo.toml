@@ -9,4 +9,4 @@ authors = ["Alberto Ruiz <aruiz@redhat.com>"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ieee1275-rs = { path = "../", features = ["no_panic_handler", "no_global_allocator"] }
+ieee1275 = { path = "../", features = ["no_panic_handler", "no_global_allocator"] }

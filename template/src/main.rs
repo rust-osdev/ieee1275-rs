@@ -13,8 +13,8 @@ extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use ieee1275_rs::prom_init;
-use ieee1275_rs::services::Args;
+use ieee1275::prom_init;
+use ieee1275::services::Args;
 
 const BUFSIZE: usize = 10000;
 
