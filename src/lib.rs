@@ -8,9 +8,71 @@ use core::ptr;
 
 const OF_SIZE_ERR: usize = usize::MAX;
 
-extern "C" fn fallback_entry(_args: *mut ServiceArgs) -> usize {
+extern "C" fn fallback_entry(_args: *mut Args) -> usize {
     OF_SIZE_ERR
 }
+
+pub mod services {
+    use crate::{IHandle, PHandle};
+    /// Header for Service Arguments
+    #[repr(C)]
+    pub struct Args {
+        pub service: *const u8,
+        pub nargs: usize,
+        pub nret: usize,
+    }
+
+    #[repr(C)]
+    pub struct MsgArgs {
+        pub args: Args,
+        pub stdout: *const IHandle,
+        pub msg: *const u8,
+        pub len: usize,
+        pub ret: usize,
+    }
+
+    #[repr(C)]
+    pub struct FindDeviceArgs {
+        pub args: Args,
+        pub device: *mut u8,
+        pub phandle: *const PHandle,
+    }
+
+    #[repr(C)]
+    pub struct PropArgs<T> {
+        pub args: Args,
+        pub phandle: *const PHandle,
+        pub prop: *const u8,
+        pub buf: *const T,
+        pub buflen: usize,
+        pub size: usize,
+    }
+
+    #[repr(C)]
+    pub struct ClaimArgs {
+        pub args: Args,
+        pub virt: *mut u8,
+        pub size: usize,
+        pub align: usize,
+        pub ret: *mut u8,
+    }
+
+    #[repr(C)]
+    pub struct ReleaseArgs {
+        pub args: Args,
+        pub virt: *mut u8,
+        pub size: usize,
+    }
+
+    #[repr(C)]
+    pub struct OpenArgs {
+        pub args: Args,
+        pub dev: *const u8,
+        pub handle: *const IHandle,
+    }
+}
+
+use services::Args;
 
 #[cfg_attr(not(feature = "no_global_allocator"), global_allocator)]
 static mut GLOBAL_PROM: PROM = PROM {
@@ -30,14 +92,6 @@ fn panic(_panic: &PanicInfo<'_>) -> ! {
     }
 }
 
-/// Header for Service Arguments
-#[repr(C)]
-pub struct ServiceArgs {
-    service: *const u8,
-    nargs: usize,
-    nret: usize,
-}
-
 /// Opaque type to represent a package handle
 #[repr(C)]
 pub struct PHandle {}
@@ -50,7 +104,7 @@ pub struct IHandle {}
 #[derive(Clone, Copy)]
 pub struct PROM {
     /// Entry function into the Open Firmware services
-    entry_fn: extern "C" fn(*mut ServiceArgs) -> usize,
+    entry_fn: extern "C" fn(*mut Args) -> usize,
     /// Package handle into '/chosen' which holds parameters chosen at runtime
     pub chosen: *const PHandle,
     /// Instance handle into stdout
@@ -63,7 +117,7 @@ impl PROM {
     /// # Errors
     ///
     /// If it fails on initalization of ```chosen``` and ```stdout``` it will return an error
-    pub fn new(entry: extern "C" fn(*mut ServiceArgs) -> usize) -> Result<Self, &'static str> {
+    pub fn new(entry: extern "C" fn(*mut Args) -> usize) -> Result<Self, &'static str> {
         let mut ret = PROM {
             entry_fn: entry,
             chosen: ptr::null_mut(),
@@ -91,33 +145,24 @@ impl PROM {
 
     /// Exits the client program back into Open Firmware
     pub fn exit(&self) -> ! {
-        let mut args = ServiceArgs {
+        let mut args = Args {
             service: "exit\0".as_ptr(),
             nargs: 1,
             nret: 0,
         };
 
-        (self.entry_fn)(&mut args as *mut ServiceArgs);
+        (self.entry_fn)(&mut args as *mut Args);
         loop {}
     }
 
     /// Writes a string into stdout
     pub fn write_stdout(&self, msg: &str) -> Result<(), &'static str> {
-        #[repr(C)]
-        struct MsgArgs {
-            args: ServiceArgs,
-            stdout: *const IHandle,
-            msg: *const u8,
-            len: usize,
-            ret: usize,
-        }
-
         if self.stdout.is_null() {
             return Err("stdout is not present");
         }
 
-        let mut args = MsgArgs {
-            args: ServiceArgs {
+        let mut args = services::MsgArgs {
+            args: Args {
                 service: "write\0".as_ptr(),
                 nargs: 3,
                 nret: 1,
@@ -128,7 +173,7 @@ impl PROM {
             ret: 0,
         };
 
-        (self.entry_fn)(&mut args.args as *mut ServiceArgs);
+        (self.entry_fn)(&mut args.args as *mut Args);
 
         match args.ret {
             OF_SIZE_ERR => Err("Error writing stdout"),
@@ -144,15 +189,8 @@ impl PROM {
 
     /// Finds a device from a null terminated string
     pub fn find_device(&self, name: &str) -> Result<*const PHandle, &'static str> {
-        #[repr(C)]
-        struct FindDeviceArgs {
-            args: ServiceArgs,
-            device: *mut u8,
-            phandle: *const PHandle,
-        }
-
-        let mut args = FindDeviceArgs {
-            args: ServiceArgs {
+        let mut args = services::FindDeviceArgs {
+            args: Args {
                 service: "finddevice\0".as_ptr() as *mut u8,
                 nargs: 1,
                 nret: 1,
@@ -161,7 +199,7 @@ impl PROM {
             phandle: ptr::null_mut(),
         };
 
-        match (self.entry_fn)(&mut args.args as *mut ServiceArgs) {
+        match (self.entry_fn)(&mut args.args as *mut Args) {
             OF_SIZE_ERR => Err("Could not retreive property"),
             _ => Ok(args.phandle),
         }
@@ -186,18 +224,8 @@ impl PROM {
         buf: *mut T,
         buflen: usize,
     ) -> Result<usize, &'static str> {
-        #[repr(C)]
-        struct PropArgs<T> {
-            args: ServiceArgs,
-            phandle: *const PHandle,
-            prop: *const u8,
-            buf: *const T,
-            buflen: usize,
-            size: usize,
-        }
-
-        let mut args = PropArgs {
-            args: ServiceArgs {
+        let mut args = services::PropArgs {
+            args: Args {
                 service: "getprop\0".as_ptr(),
                 nargs: 4,
                 nret: 1,
@@ -209,7 +237,7 @@ impl PROM {
             size: 0,
         };
 
-        match (self.entry_fn)(&mut args.args as *mut ServiceArgs) {
+        match (self.entry_fn)(&mut args.args as *mut Args) {
             OF_SIZE_ERR => Err("Could not retreive property"),
             _ => Ok(args.size),
         }
@@ -222,21 +250,12 @@ impl PROM {
     /// ```size```: The amount of bytes to be allocated
     /// ```align```: The byte alignment boundary, must be graeter than 0
     pub fn claim(&self, size: usize, align: usize) -> Result<*mut u8, &'static str> {
-        #[repr(C)]
-        struct ClaimArgs {
-            args: ServiceArgs,
-            virt: *mut u8,
-            size: usize,
-            align: usize,
-            ret: *mut u8,
-        }
-
         if align == 0 {
             return Err("Could not allocate memory with alignment '0'");
         }
 
-        let mut args = ClaimArgs {
-            args: ServiceArgs {
+        let mut args = services::ClaimArgs {
+            args: Args {
                 service: "claim\0".as_ptr(),
                 nargs: 3,
                 nret: 1,
@@ -247,7 +266,7 @@ impl PROM {
             ret: ptr::null_mut(),
         };
 
-        match (self.entry_fn)(&mut args.args as *mut ServiceArgs) {
+        match (self.entry_fn)(&mut args.args as *mut Args) {
             OF_SIZE_ERR => Err("Could not allocate memory"),
             _ => Ok(args.ret),
         }
@@ -255,15 +274,8 @@ impl PROM {
 
     /// Release allocated heap memory by the ```claim``` method
     pub fn release(&self, virt: *mut u8, size: usize) {
-        #[repr(C)]
-        struct ReleaseArgs {
-            args: ServiceArgs,
-            virt: *mut u8,
-            size: usize,
-        }
-
-        let mut args = ReleaseArgs {
-            args: ServiceArgs {
+        let mut args = services::ReleaseArgs {
+            args: Args {
                 service: "release\0".as_ptr(),
                 nargs: 2,
                 nret: 0,
@@ -272,7 +284,7 @@ impl PROM {
             size,
         };
 
-        let _ = (self.entry_fn)(&mut args.args as *mut ServiceArgs);
+        let _ = (self.entry_fn)(&mut args.args as *mut Args);
     }
 
     /// Opens a device from a spec
@@ -285,15 +297,8 @@ impl PROM {
     ///
     /// Pointer to the device's package instance handle on success
     pub fn open(&self, dev_spec: &str) -> Result<*const IHandle, &'static str> {
-        #[repr(C)]
-        struct OpenArgs {
-            args: ServiceArgs,
-            dev: *const u8,
-            handle: *const IHandle,
-        }
-
-        let mut args = OpenArgs {
-            args: ServiceArgs {
+        let mut args = services::OpenArgs {
+            args: Args {
                 service: "open\0".as_ptr(),
                 nargs: 1,
                 nret: 1,
@@ -302,7 +307,7 @@ impl PROM {
             handle: ptr::null(),
         };
 
-        let _ = (self.entry_fn)(&mut args.args as *mut ServiceArgs);
+        let _ = (self.entry_fn)(&mut args.args as *mut Args);
 
         match args.handle.is_null() {
             true => Err("Could not open device"),
@@ -329,7 +334,7 @@ impl PROM {
     ) -> Result<usize, &'static str> {
         #[repr(C)]
         struct ReadArgs {
-            args: ServiceArgs,
+            args: Args,
             handle: *const IHandle,
             buffer: *const u8,
             size: usize,
@@ -337,7 +342,7 @@ impl PROM {
         }
 
         let mut args = ReadArgs {
-            args: ServiceArgs {
+            args: Args {
                 service: "read\0".as_ptr(),
                 nargs: 3,
                 nret: 1,
@@ -348,7 +353,7 @@ impl PROM {
             actual_size: 0,
         };
 
-        let _ = (self.entry_fn)(&mut args.args as *mut ServiceArgs);
+        let _ = (self.entry_fn)(&mut args.args as *mut Args);
 
         match args.actual_size {
             OF_SIZE_ERR => Err("Could not read device"),
@@ -359,12 +364,12 @@ impl PROM {
     pub fn close(&self, handle: *const IHandle) -> Result<(), &'static str> {
         #[repr(C)]
         struct CloseArgs {
-            args: ServiceArgs,
+            args: Args,
             handle: *const IHandle,
         }
 
         let mut args = CloseArgs {
-            args: ServiceArgs {
+            args: Args {
                 service: "close\0".as_ptr(),
                 nargs: 1,
                 nret: 0,
@@ -372,7 +377,7 @@ impl PROM {
             handle,
         };
 
-        match (self.entry_fn)(&mut args.args as *mut ServiceArgs) {
+        match (self.entry_fn)(&mut args.args as *mut Args) {
             OF_SIZE_ERR => Err("Could not close device"),
             _ => Ok(()),
         }
@@ -395,16 +400,16 @@ unsafe impl GlobalAlloc for PROM {
 }
 
 /// This function intializes the Open Firmware environment object globally
-pub fn prom_init(entry: extern "C" fn(*mut ServiceArgs) -> usize) -> PROM {
+pub fn prom_init(entry: extern "C" fn(*mut Args) -> usize) -> PROM {
     let prom = match PROM::new(entry) {
         Ok(prom) => prom,
         Err(_) => {
-            let mut args = ServiceArgs {
+            let mut args = Args {
                 service: "exit\0".as_ptr(),
                 nargs: 0,
                 nret: 0,
             };
-            let _ = entry(&mut args as *mut ServiceArgs);
+            let _ = entry(&mut args as *mut Args);
             loop {}
         }
     };

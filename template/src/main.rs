@@ -7,14 +7,14 @@ extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use ieee1275_rs::{ServiceArgs, prom_init};
+use ieee1275_rs::prom_init;
+use ieee1275_rs::services::Args;
 
 const BUFSIZE: usize = 10000;
 
-
 #[no_mangle]
 #[link_section = ".text"]
-extern "C" fn _start(_r3: u32, _r4: u32, entry: extern "C" fn(*mut ServiceArgs) -> usize) -> isize {
+extern "C" fn _start(_r3: u32, _r4: u32, entry: extern "C" fn(*mut Args) -> usize) -> isize {
     let prom = prom_init(entry);
     prom.write_line(String::from("Hello from Rust into Open Firmware\n\r").as_str());
 
