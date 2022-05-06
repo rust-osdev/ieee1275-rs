@@ -10,14 +10,13 @@ extern crate ieee1275_rs;
 mod tests {
     use std::{
         collections::HashMap,
-        hash::Hash,
-        mem::{self, size_of},
+        mem::{size_of},
         usize,
     };
 
     use ieee1275_rs::{
         services,
-        services::{Args, FindDeviceArgs},
+        services::{Args},
         PHandle, PROM,
     };
 
@@ -51,10 +50,6 @@ mod tests {
     }
 
     impl MockProm {
-        fn clear(&mut self) {
-            self.stdout.clear();
-        }
-
         fn finddevice(&self, args: *mut Args) -> usize {
             let args = cast_args::<services::FindDeviceArgs>(args);
             let device = unsafe { std::slice::from_raw_parts(args.device, MAX_DEVICE_LENGTH) };
@@ -144,19 +139,17 @@ mod tests {
         }
 
         fn open(&self, args: *mut Args) -> usize {
-            let args = cast_args::<services::OpenArgs>(args);
-            let mock_ref = unsafe { &mut MOCK };
+            let _args = cast_args::<services::OpenArgs>(args);
             0
         }
 
         fn read(&self, args: *mut Args) -> usize {
-            let args = cast_args::<services::ReadArgs>(args);
-            let mock_ref = unsafe { &mut MOCK };
+            let _args = cast_args::<services::ReadArgs>(args);
             0
         }
 
         fn close(&self, args: *mut Args) -> usize {
-            let mock_ref = unsafe { &mut MOCK };
+            let _args = cast_args::<services::CloseArgs>(args);
             0
         }
     }
@@ -178,6 +171,12 @@ mod tests {
             mock_ref.claim(args)
         } else if service.starts_with(b"release\0") {
             mock_ref.release(args)
+        } else if service.starts_with(b"open\0") {
+            mock_ref.open(args)
+        } else if service.starts_with(b"read\0") {
+            mock_ref.read(args)
+        } else if service.starts_with(b"close\0") {
+            mock_ref.close(args)
         } else {
             usize::MAX
         }
@@ -237,5 +236,18 @@ mod tests {
             "Heap did not get empty after prom.release() {:#?}",
             heap
         );
+    }
+
+    // TODO
+    #[test]
+    fn open() {
+    }
+
+    #[test]
+    fn read() {
+    }
+
+    #[test]
+    fn close() {
     }
 }
