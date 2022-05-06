@@ -3,7 +3,9 @@ extern crate ieee1275_rs;
 mod tests {
     use std::mem::size_of;
 
-    use ieee1275_rs::{PROM,services::Args, services, PHandle};
+    use ieee1275_rs::{PHandle, PROM, services::{Args, FindDeviceArgs}, services};
+
+    // Infrastructure to mock an Open Firmware implementation
 
     const MAX_SERVICE_LENGTH: usize = 100; // We use this threshold to check if non null terminated strings are passed
     const MAX_DEVICE_LENGTH: usize = 500; // We use this threshold to check if non null terminated strings are passed
@@ -19,13 +21,17 @@ mod tests {
 
     static mut MOCK: MockProm = MockProm { stdout: String::new(), stdout_ihandle: STDOUT_IHANDLE, chosen_phandle: CHOSEN_PHANDLE };
 
+    fn cast_args<T> (args: *mut Args) -> &'static mut T {
+        unsafe { &mut *(args as *mut T) }
+    }
+
     impl MockProm {
         fn clear(&mut self) {
             self.stdout.clear();
         }
 
         fn finddevice (&self, args: *mut Args) -> usize {
-            let args = unsafe { &mut *(args as *mut services::FindDeviceArgs) };
+            let args = cast_args::<services::FindDeviceArgs>(args);
             let device = unsafe { std::slice::from_raw_parts(args.device, MAX_DEVICE_LENGTH) };
 
             assert_eq!(args.args.nargs, 1);
@@ -40,7 +46,7 @@ mod tests {
         }
 
         fn getprop (&self, args: *mut Args) -> usize {
-            let args = unsafe { &mut *(args as *mut services::PropArgs<u8>) };
+            let args = cast_args::<services::PropArgs<u8>>(args);
             let prop = unsafe { std::slice::from_raw_parts(args.prop, MAX_SERVICE_LENGTH) };
 
             assert_eq!(args.args.nargs, 4);
@@ -58,7 +64,7 @@ mod tests {
         }
 
         fn write (&self, args: *mut Args) -> usize {
-            let args: &mut services::WriteArgs = unsafe { &mut *(args as *mut services::WriteArgs ) };
+            let args = cast_args::<services::WriteArgs>(args);
             let mock_ref = unsafe {&mut MOCK};
 
             assert_eq!(args.args.nargs, 3);
@@ -74,6 +80,35 @@ mod tests {
             } else {
                 usize::MAX
             }
+        }
+
+        fn claim (&self, args: *mut Args) -> usize {
+            let args = cast_args::<services::ClaimArgs>(args);
+            let mock_ref = unsafe {&mut MOCK};
+            0
+        }
+
+        fn release (&self, args: *mut Args) -> usize {
+            let args = cast_args::<services::ReleaseArgs>(args);
+            let mock_ref = unsafe {&mut MOCK};
+            0
+        }
+
+        fn open (&self, args: *mut Args) -> usize {
+            let args = cast_args::<services::OpenArgs>(args);
+            let mock_ref = unsafe {&mut MOCK};
+            0
+        }
+
+        fn read (&self, args: *mut Args) -> usize {
+            let args = cast_args::<services::ReadArgs>(args);
+            let mock_ref = unsafe {&mut MOCK};
+            0
+        }
+
+        fn close (&self, args: *mut Args) -> usize {
+            let mock_ref = unsafe {&mut MOCK};
+            0
         }
     }
 
@@ -94,11 +129,15 @@ mod tests {
         }
     }
 
+    // Tests
+
     #[test]
     fn prom_new() {
         let prom = PROM::new(mock_entry).unwrap();
         assert_eq!(format!("{:p}", prom.chosen), "0xdeadbeef");
         assert_eq!(format!("{:p}", prom.stdout), "0xdecafbad");
+
+        //TODO: We need to find  how to compare function pointers
     }
 
     #[test]
