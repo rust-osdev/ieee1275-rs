@@ -70,6 +70,21 @@ pub mod services {
         pub dev: *const u8,
         pub handle: *const IHandle,
     }
+
+    #[repr(C)]
+    pub struct ReadArgs {
+        pub args: Args,
+        pub handle: *const IHandle,
+        pub buffer: *const u8,
+        pub size: usize,
+        pub actual_size: usize,
+    }
+
+    #[repr(C)]
+    pub struct CloseArgs {
+        pub args: Args,
+        pub handle: *const IHandle,
+    }
 }
 
 use services::Args;
@@ -332,16 +347,7 @@ impl PROM {
         buffer: *mut u8,
         size: usize,
     ) -> Result<usize, &'static str> {
-        #[repr(C)]
-        struct ReadArgs {
-            args: Args,
-            handle: *const IHandle,
-            buffer: *const u8,
-            size: usize,
-            actual_size: usize,
-        }
-
-        let mut args = ReadArgs {
+        let mut args = services::ReadArgs {
             args: Args {
                 service: "read\0".as_ptr(),
                 nargs: 3,
@@ -362,13 +368,7 @@ impl PROM {
     }
 
     pub fn close(&self, handle: *const IHandle) -> Result<(), &'static str> {
-        #[repr(C)]
-        struct CloseArgs {
-            args: Args,
-            handle: *const IHandle,
-        }
-
-        let mut args = CloseArgs {
+        let mut args = services::CloseArgs {
             args: Args {
                 service: "close\0".as_ptr(),
                 nargs: 1,
@@ -400,6 +400,8 @@ unsafe impl GlobalAlloc for PROM {
 }
 
 /// This function intializes the Open Firmware environment object globally
+/// it has to be called before any other API calls are used. Otherwise the
+/// default panic and allocation handlers will fail
 pub fn prom_init(entry: extern "C" fn(*mut Args) -> usize) -> PROM {
     let prom = match PROM::new(entry) {
         Ok(prom) => prom,
