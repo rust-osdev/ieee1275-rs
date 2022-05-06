@@ -22,3 +22,4 @@ strip = true
 
 [features]
 no_panic_handler = []
+no_global_allocator = []

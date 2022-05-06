@@ -1,8 +1,9 @@
 #![no_std]
 #![feature(default_alloc_error_handler)]
 
+extern crate alloc;
+
 use core::alloc::{GlobalAlloc, Layout};
-use core::panic::PanicInfo;
 use core::ptr;
 
 const OF_SIZE_ERR: usize = usize::MAX;
@@ -11,14 +12,15 @@ extern "C" fn fallback_entry(_args: *mut ServiceArgs) -> usize {
     OF_SIZE_ERR
 }
 
-#[global_allocator]
+#[cfg_attr(not(feature = "no_global_allocator"), global_allocator)]
 static mut GLOBAL_PROM: PROM = PROM {
     entry_fn: fallback_entry,
     stdout: ptr::null_mut(),
     chosen: ptr::null_mut(),
 };
 
-extern crate alloc;
+#[cfg(not(feature = "no_panic_handler"))]
+use core::panic::PanicInfo;
 
 #[cfg(not(feature = "no_panic_handler"))]
 #[panic_handler]
