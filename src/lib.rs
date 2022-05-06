@@ -23,7 +23,7 @@ pub mod services {
     }
 
     #[repr(C)]
-    pub struct MsgArgs {
+    pub struct WriteArgs {
         pub args: Args,
         pub stdout: *const IHandle,
         pub msg: *const u8,
@@ -161,7 +161,7 @@ impl PROM {
             return Err("stdout is not present");
         }
 
-        let mut args = services::MsgArgs {
+        let mut args = services::WriteArgs {
             args: Args {
                 service: "write\0".as_ptr(),
                 nargs: 3,
