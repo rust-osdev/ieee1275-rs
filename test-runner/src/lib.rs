@@ -1,4 +1,12 @@
+
+// Copyright 2021 Alberto Ruiz <aruiz@redhat.com>
+//
+// Use of this source code is governed by an MIT-style
+// license that can be found in the LICENSE file or at
+// https://opensource.org/licenses/MIT.
+
 extern crate ieee1275_rs;
+
 #[cfg(test)]
 mod tests {
     use std::mem::size_of;
