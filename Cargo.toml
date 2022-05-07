@@ -1,5 +1,6 @@
 [package]
 name = "ieee1275"
+description = "Safe and easy-to-use wrapper for building OpenFirmware/IEEE1275 apps"
 version = "0.1.0"
 edition = "2021"
 authors = ["Alberto Ruiz <aruiz@redhat.com>"]
