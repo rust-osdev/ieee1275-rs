@@ -1,6 +1,6 @@
 [package]
 name = "ieee1275"
-version = "0.0.1"
+version = "0.1.0"
 edition = "2021"
 authors = ["Alberto Ruiz <aruiz@redhat.com>"]
 repository = "https://gitlab.com/aruiz/ieee1275-rs"
