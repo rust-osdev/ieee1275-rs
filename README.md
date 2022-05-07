@@ -11,13 +11,16 @@ To build sample bootloader payload, use the crate under the ```template`` direct
 
 This is configured as a cross compilation crate by default. The output binaries are required to be PPC32bit big endian. You need a working powerpc gcc compiler, you may need to tweak ```.cargo/config``` to point to the right binaries.
 
-You also need to install the powerpc targe using ```rustup```t:
+You also need to install the powerpc targe using ```rustup```, as of now this create requires nightly so you need to make it default too:
 
 ```$ rustup target add powerpc-unknown-linux-gnu```
 
 To create a valid build you need to use --release, debug builds will fail (not clear why yet):
 
-```$ cargo build --release --target powerpc-unknown-linux-gnu```
+```
+$ rustup default nightly
+$ cargo +nightly build --release --target powerpc-unknown-linux-gnu
+```
 
 ## Testing
 
