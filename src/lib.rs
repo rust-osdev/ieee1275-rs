@@ -91,9 +91,23 @@ pub mod services {
         pub args: Args,
         pub handle: *const IHandle,
     }
+
+    #[repr(C)]
+    pub struct CallMethodArgs {
+        pub args: Args,
+        pub method: *const u8,
+        pub handle: *const IHandle,
+    }
+
+    #[repr(C)]
+    pub struct BlockSizeArgs {
+        pub args: CallMethodArgs,
+        pub result: isize,
+        pub block_size: isize,
+    }
 }
 
-use services::Args;
+use services::{Args, CallMethodArgs};
 
 #[cfg_attr(not(feature = "no_global_allocator"), global_allocator)]
 static mut GLOBAL_PROM: PROM = PROM {
@@ -386,6 +400,30 @@ impl PROM {
         match (self.entry_fn)(&mut args.args as *mut Args) {
             OF_SIZE_ERR => Err("Could not close device"),
             _ => Ok(()),
+        }
+    }
+
+    pub fn get_block_size(&self, block_device: *const IHandle) -> Result<isize, &'static str> {
+        let mut args = services::BlockSizeArgs {
+            args: CallMethodArgs {
+                args: Args {
+                    service: "call-method\0".as_ptr(),
+                    nargs: 2,
+                    nret: 2,
+                },
+                method: "block-size\0".as_ptr(),
+                handle: block_device,
+            },
+            result: 0,
+            block_size: 0,
+        };
+
+        match (self.entry_fn)(&mut args.args.args as *mut Args) {
+            OF_SIZE_ERR => Err("Could not get block size for volue device"),
+            _ => match args.result {
+                0 => Ok(args.block_size),
+                _ => Err("Error trying to retrieve block size"),
+            },
         }
     }
 }

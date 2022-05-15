@@ -8,17 +8,9 @@ extern crate ieee1275;
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        collections::HashMap,
-        mem::{size_of},
-        usize,
-    };
+    use std::{collections::HashMap, mem::size_of, usize};
 
-    use ieee1275::{
-        services,
-        services::{Args},
-        PHandle, PROM,
-    };
+    use ieee1275::{services, services::Args, IHandle, PHandle, PROM};
 
     // Infrastructure to mock an Open Firmware implementation
 
@@ -27,6 +19,7 @@ mod tests {
 
     const CHOSEN_PHANDLE: usize = 0xdeadbeef;
     const STDOUT_IHANDLE: usize = 0xdecafbad;
+    const DISK_IHANDLE: usize = 0xfeedd15c;
 
     struct MockProm {
         stdout: String,
@@ -139,8 +132,15 @@ mod tests {
         }
 
         fn open(&self, args: *mut Args) -> usize {
-            let _args = cast_args::<services::OpenArgs>(args);
-            0
+            let mut args = cast_args::<services::OpenArgs>(args);
+            let device = unsafe { std::slice::from_raw_parts(args.dev, MAX_DEVICE_LENGTH) };
+
+            if device.starts_with(b"disk\0") {
+                args.handle = DISK_IHANDLE as *const IHandle;
+                0
+            } else {
+                usize::MAX
+            }
         }
 
         fn read(&self, args: *mut Args) -> usize {
@@ -151,6 +151,22 @@ mod tests {
         fn close(&self, args: *mut Args) -> usize {
             let _args = cast_args::<services::CloseArgs>(args);
             0
+        }
+
+        fn call_method(&self, args: *mut Args) -> usize {
+            let cm_args = cast_args::<services::CallMethodArgs>(args);
+            let method = unsafe { std::slice::from_raw_parts(cm_args.method, MAX_DEVICE_LENGTH) };
+
+            if method.starts_with(b"block-size")
+                && (cm_args.handle == DISK_IHANDLE as *const IHandle)
+            {
+                let mut bs_args = cast_args::<services::BlockSizeArgs>(args);
+                bs_args.result = 0;
+                bs_args.block_size = 512;
+                0
+            } else {
+                usize::MAX
+            }
         }
     }
 
@@ -177,7 +193,10 @@ mod tests {
             mock_ref.read(args)
         } else if service.starts_with(b"close\0") {
             mock_ref.close(args)
+        } else if service.starts_with(b"call-method\0") {
+            mock_ref.call_method(args)
         } else {
+            println!("Service not implemented in Mock PROM");
             usize::MAX
         }
     }
@@ -238,16 +257,23 @@ mod tests {
         );
     }
 
+    #[test]
+    fn block_size() {
+        let prom = PROM::new(mock_entry).unwrap();
+
+        let disk = prom.open("disk\0").unwrap();
+        assert_eq!(disk, DISK_IHANDLE as *const IHandle);
+        let dsize = prom.get_block_size(disk).unwrap();
+        assert_eq!(dsize, 512);
+    }
+
     // TODO
     #[test]
-    fn open() {
-    }
+    fn open() {}
 
     #[test]
-    fn read() {
-    }
+    fn read() {}
 
     #[test]
-    fn close() {
-    }
+    fn close() {}
 }
