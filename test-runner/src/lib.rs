@@ -161,7 +161,7 @@ mod tests {
                 && (cm_args.handle == DISK_IHANDLE as *const IHandle)
             {
                 let mut bs_args = cast_args::<services::BlockSizeArgs>(args);
-                bs_args.result = 0;
+                bs_args.args.result = 0;
                 bs_args.block_size = 512;
                 0
             } else {

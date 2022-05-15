@@ -97,12 +97,12 @@ pub mod services {
         pub args: Args,
         pub method: *const u8,
         pub handle: *const IHandle,
+        pub result: isize,
     }
 
     #[repr(C)]
     pub struct BlockSizeArgs {
         pub args: CallMethodArgs,
-        pub result: isize,
         pub block_size: isize,
     }
 }
@@ -413,14 +413,14 @@ impl PROM {
                 },
                 method: "block-size\0".as_ptr(),
                 handle: block_device,
+                result: 0,
             },
-            result: 0,
             block_size: 0,
         };
 
         match (self.entry_fn)(&mut args.args.args as *mut Args) {
             OF_SIZE_ERR => Err("Could not get block size for volue device"),
-            _ => match args.result {
+            _ => match args.args.result {
                 0 => Ok(args.block_size),
                 _ => Err("Error trying to retrieve block size"),
             },
