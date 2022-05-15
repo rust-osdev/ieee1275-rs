@@ -269,7 +269,12 @@ mod tests {
 
     // TODO
     #[test]
-    fn open() {}
+    fn open() {
+        let prom = PROM::new(mock_entry).unwrap();
+
+        let disk = prom.open("disk\0").unwrap();
+        assert_eq!(disk, DISK_IHANDLE as *const IHandle);
+    }
 
     #[test]
     fn read() {}
