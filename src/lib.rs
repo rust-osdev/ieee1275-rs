@@ -97,13 +97,23 @@ pub mod services {
         pub args: Args,
         pub method: *const u8,
         pub handle: *const IHandle,
-        pub result: isize,
     }
 
     #[repr(C)]
     pub struct BlockSizeArgs {
         pub args: CallMethodArgs,
+        pub result: isize,
         pub block_size: isize,
+    }
+
+    #[repr(C)]
+    pub struct ReadBlocks {
+        pub args: CallMethodArgs,
+        pub buf: *mut u8,
+        pub block_index: usize,
+        pub nblocks: usize,
+        pub result: usize,
+        pub blocks_read: usize,
     }
 }
 
@@ -413,20 +423,53 @@ impl PROM {
                 },
                 method: "block-size\0".as_ptr(),
                 handle: block_device,
-                result: 0,
             },
+            result: 0,
             block_size: 0,
         };
 
         match (self.entry_fn)(&mut args.args.args as *mut Args) {
             OF_SIZE_ERR => Err("Could not get block size for volue device"),
-            _ => match args.args.result {
+            _ => match args.result {
                 0 => Ok(args.block_size),
                 _ => Err("Error trying to retrieve block size"),
             },
         }
     }
-}
+
+    /*pub fn read_blocks(
+        &self,
+        handle: *const IHandle,
+        buf: &mut [u8],
+        block_index: usize,
+        nblocks: usize,
+    ) -> Result<usize, &'static str> {
+        let mut args = services::ReadBlocks {
+            args: services::CallMethodArgs {
+                args: services::Args {
+                    service: b"call-method\0".as_ptr(),
+                    nargs: 2 + 3,
+                    nret: 1 + 1,
+                },
+                method: b"read-blocks\0".as_ptr(),
+                handle,
+            },
+            buf: buf.as_mut_ptr(),
+            block_index,
+            nblocks,
+            result: usize::MAX,
+            blocks_read: 0,
+        };
+
+        match (self.entry_fn)(&mut args.args.args as *mut Args) {
+            OF_SIZE_ERR => Err("Error reading blocks from volue device"),
+            _ => match args.result {
+                0 => Ok(args.blocks_read),
+                _ => Err("Could not read block from volue device"),
+            },
+        }
+    }
+}*/
 
 unsafe impl GlobalAlloc for PROM {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
