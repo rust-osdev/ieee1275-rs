@@ -93,6 +93,15 @@ pub mod services {
     }
 
     #[repr(C)]
+    pub struct SeekArgs {
+        pub args: Args,
+        pub handle: *const IHandle,
+        pub pos_hi: isize,
+        pub pos_low: isize,
+        pub status: isize,
+    }
+
+    #[repr(C)]
     pub struct CallMethodArgs {
         pub args: Args,
         pub method: *const u8,
@@ -413,6 +422,31 @@ impl PROM {
         }
     }
 
+    pub fn seek(&self, handle: *const IHandle, pos: isize) -> Result<(), &'static str> {
+        let mut args = services::SeekArgs {
+            args: Args {
+                service: "seek\0".as_ptr(),
+                nargs: 3,
+                nret: 1,
+            },
+            handle,
+            pos_hi: 0,
+            pos_low: pos,
+            status: 0,
+        };
+
+        match (self.entry_fn)(&mut args.args as *mut Args) {
+            OF_SIZE_ERR => Err("Could not seek device"),
+            _ => {
+                if args.status == -1 {
+                    Err("seek not implemented for this device")
+                } else {
+                    Ok(())
+                }
+            }
+        }
+    }
+
     pub fn get_block_size(&self, block_device: *const IHandle) -> Result<isize, &'static str> {
         let mut args = services::BlockSizeArgs {
             args: CallMethodArgs {
@@ -468,8 +502,8 @@ impl PROM {
                 _ => Err("Could not read block from volue device"),
             },
         }
-    }
-}*/
+    }*/
+}
 
 unsafe impl GlobalAlloc for PROM {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
