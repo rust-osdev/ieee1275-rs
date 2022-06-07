@@ -4,7 +4,7 @@ description = "Safe and easy-to-use wrapper for building OpenFirmware/IEEE1275 a
 version = "0.1.0"
 edition = "2021"
 authors = ["Alberto Ruiz <aruiz@redhat.com>"]
-repository = "https://gitlab.com/aruiz/ieee1275-rs"
+repository = "https://github.com/rust-osdev/ieee1275-rs"
 license = "MIT"
 categories = ["embedded", "no-std", "api-bindings", "bootloader", "ieee1275"]
 

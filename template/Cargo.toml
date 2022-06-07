@@ -2,7 +2,7 @@
 name = "ieee1275-template"
 version = "0.1.0"
 edition = "2021"
-repository = "https://gitlab.com/aruiz/of-rs"
+repository = "https://github.com/rust-osdev/ieee1275-rs"
 license = "MIT"
 authors = ["Alberto Ruiz <aruiz@redhat.com>"]
 
