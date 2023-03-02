@@ -1,7 +1,7 @@
 [package]
 name = "ieee1275"
 description = "Safe and easy-to-use wrapper for building OpenFirmware/IEEE1275 apps"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Alberto Ruiz <aruiz@redhat.com>"]
 repository = "https://github.com/rust-osdev/ieee1275-rs"
