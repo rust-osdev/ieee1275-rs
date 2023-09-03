@@ -1,7 +1,0 @@
-[target.powerpc-unknown-linux-gnu]
-linker = "ppc64le-linux-gnu-gcc"
-ar = "ppc64le-linux-gnu-gcc-ar"
-rustflags = [
-    "-C", "link-args=-nostdlib -ffreestanding -fPIC -Ttext 100000 -mbig-endian",
-    "-C", "target-feature=+crt-static",
-]
