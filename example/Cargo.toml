@@ -1,0 +1,16 @@
+[package]
+name = "ieee1275-example"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ieee1275 ={ path = "../" }
+
+[profile.release]
+debug-assertions = false
+panic = "abort"
+lto = true
+strip = true
+opt-level = "z"
+incremental = false
+codegen-units = 1
