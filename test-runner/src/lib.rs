@@ -45,12 +45,12 @@ mod tests {
     impl MockProm {
         fn finddevice(&self, args: *mut Args) -> usize {
             let args = cast_args::<services::FindDeviceArgs>(args);
-            let device = unsafe { std::slice::from_raw_parts(args.device, MAX_DEVICE_LENGTH) };
+            let device = unsafe { std::slice::from_raw_parts(args.device as *const u8, MAX_DEVICE_LENGTH) };
 
             assert_eq!(args.args.nargs, 1);
             assert_eq!(args.args.nret, 1);
 
-            if device.starts_with(b"/chosen\0") {
+            if device.starts_with(c"/chosen".to_bytes()) {
                 (*args).phandle = self.chosen_phandle as *const PHandle;
                 size_of::<usize>()
             } else {
@@ -60,12 +60,12 @@ mod tests {
 
         fn getprop(&self, args: *mut Args) -> usize {
             let args = cast_args::<services::PropArgs<u8>>(args);
-            let prop = unsafe { std::slice::from_raw_parts(args.prop, MAX_SERVICE_LENGTH) };
+            let prop = unsafe { std::slice::from_raw_parts(args.prop as *const u8, MAX_SERVICE_LENGTH) };
 
             assert_eq!(args.args.nargs, 4);
             assert_eq!(args.args.nret, 1);
 
-            if prop.starts_with(b"stdout\0") {
+            if prop.starts_with(c"stdout".to_bytes()) {
                 assert!(args.buflen >= size_of::<usize>());
                 let stdout_address: &mut usize = unsafe { &mut *(args.buf as *mut usize) };
                 *stdout_address = self.stdout_ihandle;
@@ -132,10 +132,10 @@ mod tests {
         }
 
         fn open(&self, args: *mut Args) -> usize {
-            let mut args = cast_args::<services::OpenArgs>(args);
-            let device = unsafe { std::slice::from_raw_parts(args.dev, MAX_DEVICE_LENGTH) };
+            let args = cast_args::<services::OpenArgs>(args);
+            let device = unsafe { std::slice::from_raw_parts(args.dev as *const u8, MAX_DEVICE_LENGTH) };
 
-            if device.starts_with(b"disk\0") {
+            if device.starts_with(c"disk".to_bytes()) {
                 args.handle = DISK_IHANDLE as *const IHandle;
                 0
             } else {
@@ -155,12 +155,12 @@ mod tests {
 
         fn call_method(&self, args: *mut Args) -> usize {
             let cm_args = cast_args::<services::CallMethodArgs>(args);
-            let method = unsafe { std::slice::from_raw_parts(cm_args.method, MAX_DEVICE_LENGTH) };
+            let method = unsafe { std::slice::from_raw_parts(cm_args.method as *const u8, MAX_DEVICE_LENGTH) };
 
-            if method.starts_with(b"block-size")
+            if method.starts_with(c"block-size".to_bytes())
                 && (cm_args.handle == DISK_IHANDLE as *const IHandle)
             {
-                let mut bs_args = cast_args::<services::BlockSizeArgs>(args);
+                let bs_args = cast_args::<services::BlockSizeArgs>(args);
                 bs_args.result = 0;
                 bs_args.block_size = 512;
                 0
@@ -173,27 +173,27 @@ mod tests {
     extern "C" fn mock_entry(args: *mut Args) -> usize {
         let service_args = unsafe { &mut (*args) };
         let service =
-            unsafe { std::slice::from_raw_parts(service_args.service, MAX_DEVICE_LENGTH) };
+            unsafe { std::slice::from_raw_parts(service_args.service as *const u8, MAX_DEVICE_LENGTH) };
 
         let mock_ref = unsafe { &mut MOCK };
 
-        if service.starts_with(b"finddevice\0") {
+        if service.starts_with(c"finddevice".to_bytes()) {
             mock_ref.finddevice(args)
-        } else if service.starts_with(b"getprop\0") {
+        } else if service.starts_with(c"getprop".to_bytes()) {
             mock_ref.getprop(args)
-        } else if service.starts_with(b"write\0") {
+        } else if service.starts_with(c"write".to_bytes()) {
             mock_ref.write(args)
-        } else if service.starts_with(b"claim\0") {
+        } else if service.starts_with(c"claim".to_bytes()) {
             mock_ref.claim(args)
-        } else if service.starts_with(b"release\0") {
+        } else if service.starts_with(c"release".to_bytes()) {
             mock_ref.release(args)
-        } else if service.starts_with(b"open\0") {
+        } else if service.starts_with(c"open".to_bytes()) {
             mock_ref.open(args)
-        } else if service.starts_with(b"read\0") {
+        } else if service.starts_with(c"read".to_bytes()) {
             mock_ref.read(args)
-        } else if service.starts_with(b"close\0") {
+        } else if service.starts_with(c"close".to_bytes()) {
             mock_ref.close(args)
-        } else if service.starts_with(b"call-method\0") {
+        } else if service.starts_with(c"call-method".to_bytes()) {
             mock_ref.call_method(args)
         } else {
             println!("Service not implemented in Mock PROM");
@@ -261,7 +261,7 @@ mod tests {
     fn block_size() {
         let prom = PROM::new(mock_entry).unwrap();
 
-        let disk = prom.open("disk\0").unwrap();
+        let disk = prom.open(c"disk").unwrap();
         assert_eq!(disk, DISK_IHANDLE as *const IHandle);
         let dsize = prom.get_block_size(disk).unwrap();
         assert_eq!(dsize, 512);
@@ -272,7 +272,7 @@ mod tests {
     fn open() {
         let prom = PROM::new(mock_entry).unwrap();
 
-        let disk = prom.open("disk\0").unwrap();
+        let disk = prom.open(c"disk").unwrap();
         assert_eq!(disk, DISK_IHANDLE as *const IHandle);
     }
 

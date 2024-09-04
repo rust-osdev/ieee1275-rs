@@ -10,6 +10,7 @@ extern crate alloc;
 
 use core::alloc::{GlobalAlloc, Layout};
 use core::ptr;
+use core::ffi::CStr;
 
 const OF_SIZE_ERR: usize = usize::MAX;
 
@@ -18,11 +19,13 @@ extern "C" fn fallback_entry(_args: *mut Args) -> usize {
 }
 
 pub mod services {
+    use core::ffi::c_char;
+
     use crate::{IHandle, PHandle};
     /// Header for Service Arguments
     #[repr(C)]
     pub struct Args {
-        pub service: *const u8,
+        pub service: *const c_char,
         pub nargs: usize,
         pub nret: usize,
     }
@@ -72,7 +75,7 @@ pub mod services {
     #[repr(C)]
     pub struct OpenArgs {
         pub args: Args,
-        pub dev: *const u8,
+        pub dev: *const c_char,
         pub handle: *const IHandle,
     }
 
@@ -103,7 +106,7 @@ pub mod services {
     #[repr(C)]
     pub struct CallMethodArgs {
         pub args: Args,
-        pub method: *const u8,
+        pub method: *const c_char,
         pub handle: *const IHandle,
     }
 
@@ -182,11 +185,11 @@ impl PROM {
     }
 
     fn init(&mut self) -> Result<(), &'static str> {
-        let chosen = self.find_device("/chosen\0")?;
+        let chosen = self.find_device(c"/chosen")?;
         let mut stdout: *const IHandle = ptr::null_mut();
         let _ = self.get_property(
             chosen,
-            "stdout\0",
+            c"stdout",
             &mut stdout as *mut *const IHandle,
             core::mem::size_of::<*const IHandle>(),
         )?;
@@ -199,7 +202,7 @@ impl PROM {
     /// Exits the client program back into Open Firmware
     pub fn exit(&self) -> ! {
         let mut args = Args {
-            service: "exit\0".as_ptr(),
+            service: c"exit".as_ptr(),
             nargs: 1,
             nret: 0,
         };
@@ -216,7 +219,7 @@ impl PROM {
 
         let mut args = services::WriteArgs {
             args: Args {
-                service: "write\0".as_ptr(),
+                service: c"write".as_ptr(),
                 nargs: 3,
                 nret: 1,
             },
@@ -241,10 +244,10 @@ impl PROM {
     }
 
     /// Finds a device from a null terminated string
-    pub fn find_device(&self, name: &str) -> Result<*const PHandle, &'static str> {
+    pub fn find_device(&self, name: &CStr) -> Result<*const PHandle, &'static str> {
         let mut args = services::FindDeviceArgs {
             args: Args {
-                service: "finddevice\0".as_ptr() as *mut u8,
+                service: c"finddevice".as_ptr(),
                 nargs: 1,
                 nret: 1,
             },
@@ -273,13 +276,13 @@ impl PROM {
     pub fn get_property<T>(
         &self,
         phandle: *const PHandle,
-        prop: &str,
+        prop: &CStr,
         buf: *mut T,
         buflen: usize,
     ) -> Result<usize, &'static str> {
         let mut args = services::PropArgs {
             args: Args {
-                service: "getprop\0".as_ptr(),
+                service: c"getprop".as_ptr(),
                 nargs: 4,
                 nret: 1,
             },
@@ -309,7 +312,7 @@ impl PROM {
 
         let mut args = services::ClaimArgs {
             args: Args {
-                service: "claim\0".as_ptr(),
+                service: c"claim".as_ptr(),
                 nargs: 3,
                 nret: 1,
             },
@@ -329,7 +332,7 @@ impl PROM {
     pub fn release(&self, virt: *mut u8, size: usize) {
         let mut args = services::ReleaseArgs {
             args: Args {
-                service: "release\0".as_ptr(),
+                service: c"release".as_ptr(),
                 nargs: 2,
                 nret: 0,
             },
@@ -349,10 +352,10 @@ impl PROM {
     /// # Returns
     ///
     /// Pointer to the device's package instance handle on success
-    pub fn open(&self, dev_spec: &str) -> Result<*const IHandle, &'static str> {
+    pub fn open(&self, dev_spec: &CStr) -> Result<*const IHandle, &'static str> {
         let mut args = services::OpenArgs {
             args: Args {
-                service: "open\0".as_ptr(),
+                service: c"open".as_ptr(),
                 nargs: 1,
                 nret: 1,
             },
@@ -387,7 +390,7 @@ impl PROM {
     ) -> Result<usize, &'static str> {
         let mut args = services::ReadArgs {
             args: Args {
-                service: "read\0".as_ptr(),
+                service: c"read".as_ptr(),
                 nargs: 3,
                 nret: 1,
             },
@@ -408,7 +411,7 @@ impl PROM {
     pub fn close(&self, handle: *const IHandle) -> Result<(), &'static str> {
         let mut args = services::CloseArgs {
             args: Args {
-                service: "close\0".as_ptr(),
+                service: c"close".as_ptr(),
                 nargs: 1,
                 nret: 0,
             },
@@ -424,7 +427,7 @@ impl PROM {
     pub fn seek(&self, handle: *const IHandle, pos: isize) -> Result<(), &'static str> {
         let mut args = services::SeekArgs {
             args: Args {
-                service: "seek\0".as_ptr(),
+                service: c"seek".as_ptr(),
                 nargs: 3,
                 nret: 1,
             },
@@ -450,11 +453,11 @@ impl PROM {
         let mut args = services::BlockSizeArgs {
             args: CallMethodArgs {
                 args: Args {
-                    service: "call-method\0".as_ptr(),
+                    service: c"call-method".as_ptr(),
                     nargs: 2,
                     nret: 2,
                 },
-                method: "block-size\0".as_ptr(),
+                method: c"block-size".as_ptr(),
                 handle: block_device,
             },
             result: 0,
@@ -527,7 +530,7 @@ pub fn prom_init(entry: extern "C" fn(*mut Args) -> usize) -> PROM {
         Ok(prom) => prom,
         Err(_) => {
             let mut args = Args {
-                service: "exit\0".as_ptr(),
+                service: c"exit".as_ptr(),
                 nargs: 0,
                 nret: 0,
             };
