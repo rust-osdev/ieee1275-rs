@@ -6,7 +6,7 @@ edition = "2021"
 authors = ["Alberto Ruiz <aruiz@redhat.com>"]
 repository = "https://github.com/rust-osdev/ieee1275-rs"
 license = "MIT"
-categories = ["embedded", "no-std", "api-bindings", "bootloader", "ieee1275"]
+categories = ["embedded", "no-std", "api-bindings"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
