@@ -8,7 +8,7 @@ extern crate ieee1275;
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, mem::size_of, usize};
+    use std::{collections::HashMap, mem::size_of, sync::Mutex, usize};
 
     use ieee1275::{services, services::Args, IHandle, PHandle, PROM};
 
@@ -31,12 +31,12 @@ mod tests {
         heap: Option<HashMap<*mut u8, Vec<u8>>>,
     }
 
-    static mut MOCK: MockProm = MockProm {
+    static mut MOCK: Mutex<MockProm> = Mutex::new(MockProm {
         stdout: String::new(),
         stdout_ihandle: STDOUT_IHANDLE,
         chosen_phandle: CHOSEN_PHANDLE,
-    };
-    static mut HEAP: Heap = Heap { heap: None };
+    });
+    static mut HEAP: Mutex<Heap> = Mutex::new(Heap { heap: None });
 
     fn cast_args<T>(args: *mut Args) -> &'static mut T {
         unsafe { &mut *(args as *mut T) }
@@ -45,7 +45,8 @@ mod tests {
     impl MockProm {
         fn finddevice(&self, args: *mut Args) -> usize {
             let args = cast_args::<services::FindDeviceArgs>(args);
-            let device = unsafe { std::slice::from_raw_parts(args.device as *const u8, MAX_DEVICE_LENGTH) };
+            let device =
+                unsafe { std::slice::from_raw_parts(args.device as *const u8, MAX_DEVICE_LENGTH) };
 
             assert_eq!(args.args.nargs, 1);
             assert_eq!(args.args.nret, 1);
@@ -60,7 +61,8 @@ mod tests {
 
         fn getprop(&self, args: *mut Args) -> usize {
             let args = cast_args::<services::PropArgs<u8>>(args);
-            let prop = unsafe { std::slice::from_raw_parts(args.prop as *const u8, MAX_SERVICE_LENGTH) };
+            let prop =
+                unsafe { std::slice::from_raw_parts(args.prop as *const u8, MAX_SERVICE_LENGTH) };
 
             assert_eq!(args.args.nargs, 4);
             assert_eq!(args.args.nret, 1);
@@ -79,7 +81,7 @@ mod tests {
 
         fn write(&self, args: *mut Args) -> usize {
             let args = cast_args::<services::WriteArgs>(args);
-            let mock_ref = unsafe { &mut MOCK };
+            let mock_ref = unsafe { MOCK.get_mut().unwrap() };
 
             assert_eq!(args.args.nargs, 3);
             assert_eq!(args.args.nret, 1);
@@ -99,7 +101,7 @@ mod tests {
 
         fn claim(&self, args: *mut Args) -> usize {
             let args = cast_args::<services::ClaimArgs>(args);
-            let heap_ref = unsafe { &mut HEAP };
+            let heap_ref = unsafe { HEAP.get_mut().unwrap() };
 
             if heap_ref.heap.is_none() {
                 heap_ref.heap = Some(HashMap::new());
@@ -119,7 +121,7 @@ mod tests {
 
         fn release(&self, args: *mut Args) -> usize {
             let args = cast_args::<services::ReleaseArgs>(args);
-            let heap_ref = unsafe { &mut HEAP };
+            let heap_ref = unsafe { HEAP.get_mut().unwrap() };
 
             if heap_ref.heap.is_none() {
                 return 0;
@@ -133,7 +135,8 @@ mod tests {
 
         fn open(&self, args: *mut Args) -> usize {
             let args = cast_args::<services::OpenArgs>(args);
-            let device = unsafe { std::slice::from_raw_parts(args.dev as *const u8, MAX_DEVICE_LENGTH) };
+            let device =
+                unsafe { std::slice::from_raw_parts(args.dev as *const u8, MAX_DEVICE_LENGTH) };
 
             if device.starts_with(c"disk".to_bytes()) {
                 args.handle = DISK_IHANDLE as *const IHandle;
@@ -155,7 +158,9 @@ mod tests {
 
         fn call_method(&self, args: *mut Args) -> usize {
             let cm_args = cast_args::<services::CallMethodArgs>(args);
-            let method = unsafe { std::slice::from_raw_parts(cm_args.method as *const u8, MAX_DEVICE_LENGTH) };
+            let method = unsafe {
+                std::slice::from_raw_parts(cm_args.method as *const u8, MAX_DEVICE_LENGTH)
+            };
 
             if method.starts_with(c"block-size".to_bytes())
                 && (cm_args.handle == DISK_IHANDLE as *const IHandle)
@@ -172,10 +177,11 @@ mod tests {
 
     extern "C" fn mock_entry(args: *mut Args) -> usize {
         let service_args = unsafe { &mut (*args) };
-        let service =
-            unsafe { std::slice::from_raw_parts(service_args.service as *const u8, MAX_DEVICE_LENGTH) };
+        let service = unsafe {
+            std::slice::from_raw_parts(service_args.service as *const u8, MAX_DEVICE_LENGTH)
+        };
 
-        let mock_ref = unsafe { &mut MOCK };
+        let mock_ref = unsafe { MOCK.get_mut().unwrap() };
 
         if service.starts_with(c"finddevice".to_bytes()) {
             mock_ref.finddevice(args)
@@ -214,7 +220,7 @@ mod tests {
 
     #[test]
     fn write_stdout() {
-        let mock_ref = unsafe { &mut MOCK };
+        let mock_ref = unsafe { MOCK.get_mut().unwrap() };
         let prom = PROM::new(mock_entry).unwrap();
         prom.write_line("one two three");
         assert_eq!(mock_ref.stdout, "one two three\n\r");
@@ -223,7 +229,7 @@ mod tests {
     #[test]
     fn claim_release() {
         let prom = PROM::new(mock_entry).unwrap();
-        let heap = unsafe { &mut HEAP };
+        let heap = unsafe { HEAP.get_mut().unwrap() };
 
         const ALLOC_LENGHT: usize = 4;
 
