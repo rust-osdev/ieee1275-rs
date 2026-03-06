@@ -98,8 +98,8 @@ pub mod services {
     pub struct SeekArgs {
         pub args: Args,
         pub handle: *const IHandle,
-        pub pos_hi: isize,
-        pub pos_low: isize,
+        pub pos_hi: usize,
+        pub pos_low: usize,
         pub status: isize,
     }
 
@@ -204,6 +204,18 @@ impl PROM {
         let mut args = Args {
             service: c"exit".as_ptr(),
             nargs: 1,
+            nret: 0,
+        };
+
+        (self.entry_fn)(&mut args as *mut Args);
+        loop {}
+    }
+
+    /// Powers off the system. Does not return.
+    pub fn power_off(&self) -> ! {
+        let mut args = Args {
+            service: c"power-off".as_ptr(),
+            nargs: 0,
             nret: 0,
         };
 
@@ -424,7 +436,7 @@ impl PROM {
         }
     }
 
-    pub fn seek(&self, handle: *const IHandle, pos: isize) -> Result<(), &'static str> {
+    pub fn seek(&self, handle: *const IHandle, pos: usize) -> Result<(), &'static str> {
         let mut args = services::SeekArgs {
             args: Args {
                 service: c"seek".as_ptr(),

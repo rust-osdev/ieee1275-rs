@@ -201,6 +201,10 @@ mod tests {
             mock_ref.close(args)
         } else if service.starts_with(c"call-method".to_bytes()) {
             mock_ref.call_method(args)
+        } else if service.starts_with(c"exit".to_bytes()) {
+            0
+        } else if service.starts_with(c"power-off".to_bytes()) {
+            0
         } else {
             println!("Service not implemented in Mock PROM");
             usize::MAX

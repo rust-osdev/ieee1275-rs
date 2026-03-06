@@ -1,0 +1,3 @@
+# Cross runs tests in QEMU for powerpc-unknown-linux-gnu.
+# See https://github.com/cross-rs/cross#supported-targets
+# Use nightly (rust-toolchain.toml); the container will use it when present.

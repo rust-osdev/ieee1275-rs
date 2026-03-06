@@ -24,6 +24,18 @@ $ cargo +nightly build --release --target powerpc-unknown-linux-gnu
 
 ## Testing
 
+### Unit tests with cross
+
+You can run the test suite for the `powerpc-unknown-linux-gnu` target using [cross](https://github.com/cross-rs/cross) (requires Docker or Podman). Tests run under QEMU user emulation inside the cross container:
+
+```
+$ cross test -p ieee1275-test-runner --target powerpc-unknown-linux-gnu
+```
+
+The repo includes a `Cross.toml` and `rust-toolchain.toml` (nightly) so the cross image uses the expected toolchain.
+
+### Manual testing with QEMU and SLOF
+
 You need qemu-system-ppc64le and the SLOF firmware binary, in fedora you can run it by having a disk image with a GPT partition table and a 4MB PReP partition where the binary will be written:
 
 ```
