@@ -311,6 +311,22 @@ impl PROM {
         }
     }
 
+    /// Get an integer property from a package (e.g. `ibm,secure-boot` from `/`).
+    /// The device tree encodes integer properties in big-endian; the value is
+    /// returned as a native u32. Fails if the property is missing or not 4 bytes.
+    pub fn get_integer_property(
+        &self,
+        phandle: *const PHandle,
+        prop: &CStr,
+    ) -> Result<u32, &'static str> {
+        let mut buf: [u8; 4] = [0; 4];
+        let size = self.get_property(phandle, prop, buf.as_mut_ptr(), buf.len())?;
+        if size != 4 {
+            return Err("Property size is not 4 bytes");
+        }
+        Ok(u32::from_be_bytes(buf))
+    }
+
     /// Allocate heap memory
     ///
     /// # Arguments
