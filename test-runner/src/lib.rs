@@ -264,6 +264,28 @@ mod tests {
     }
 
     #[test]
+    fn write_stdout_bytes() {
+        let mock_ref = unsafe { MOCK.get_mut().unwrap() };
+        mock_ref.stdout.clear();
+        let prom = PROM::new(mock_entry).unwrap();
+
+        // write_stdout_bytes sends bytes to the write client service
+        let bytes = b"raw bytes";
+        prom.write_stdout_bytes(bytes).unwrap();
+        assert_eq!(mock_ref.stdout, "raw bytes");
+
+        // write_stdout (string) is implemented on top of write_stdout_bytes
+        mock_ref.stdout.clear();
+        prom.write_stdout("str").unwrap();
+        assert_eq!(mock_ref.stdout, "str");
+
+        // Empty slice is a no-op (returns Ok without calling firmware)
+        mock_ref.stdout.clear();
+        prom.write_stdout_bytes(&[]).unwrap();
+        assert!(mock_ref.stdout.is_empty());
+    }
+
+    #[test]
     fn claim_release() {
         let prom = PROM::new(mock_entry).unwrap();
         let heap = unsafe { HEAP.get_mut().unwrap() };

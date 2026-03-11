@@ -230,10 +230,16 @@ impl PROM {
         loop {}
     }
 
-    /// Writes a string into stdout
-    pub fn write_stdout(&self, msg: &str) -> Result<(), &'static str> {
+    /// Writes raw bytes to stdout (Open Firmware write client service).
+    ///
+    /// Used by backends that need to send arbitrary bytes (e.g. ANSI sequences plus
+    /// UTF-8 or other encodings) without going through a string.
+    pub fn write_stdout_bytes(&self, bytes: &[u8]) -> Result<(), &'static str> {
         if self.stdout.is_null() {
             return Err("stdout is not present");
+        }
+        if bytes.is_empty() {
+            return Ok(());
         }
 
         let mut args = services::WriteArgs {
@@ -243,8 +249,8 @@ impl PROM {
                 nret: 1,
             },
             stdout: self.stdout,
-            msg: msg.as_ptr(),
-            len: msg.len(),
+            msg: bytes.as_ptr(),
+            len: bytes.len(),
             ret: 0,
         };
 
@@ -254,6 +260,11 @@ impl PROM {
             OF_SIZE_ERR => Err("Error writing stdout"),
             _ => Ok(()),
         }
+    }
+
+    /// Writes a string into stdout (implemented on top of [`write_stdout_bytes`](PROM::write_stdout_bytes)).
+    pub fn write_stdout(&self, msg: &str) -> Result<(), &'static str> {
+        self.write_stdout_bytes(msg.as_bytes())
     }
 
     /// Writes a str into stdout and ends with a newline
