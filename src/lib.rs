@@ -141,6 +141,7 @@ use services::{Args, CallMethodArgs};
 static mut GLOBAL_PROM: PROM = PROM {
     entry_fn: fallback_entry,
     stdout: ptr::null_mut(),
+    stdin: ptr::null_mut(),
     chosen: ptr::null_mut(),
 };
 
@@ -172,6 +173,8 @@ pub struct PROM {
     pub chosen: *const PHandle,
     /// Instance handle into stdout
     pub stdout: *const IHandle,
+    /// Instance handle into stdin (for read_stdin)
+    pub stdin: *const IHandle,
 }
 
 impl PROM {
@@ -185,6 +188,7 @@ impl PROM {
             entry_fn: entry,
             chosen: ptr::null_mut(),
             stdout: ptr::null_mut(),
+            stdin: ptr::null_mut(),
         };
 
         ret.init()?;
@@ -200,8 +204,16 @@ impl PROM {
             &mut stdout as *mut *const IHandle,
             core::mem::size_of::<*const IHandle>(),
         )?;
+        let mut stdin: *const IHandle = ptr::null_mut();
+        let _ = self.get_property(
+            chosen,
+            c"stdin",
+            &mut stdin as *mut *const IHandle,
+            core::mem::size_of::<*const IHandle>(),
+        )?;
 
         self.stdout = stdout;
+        self.stdin = stdin;
         self.chosen = chosen;
         Ok(())
     }
@@ -327,6 +339,34 @@ impl PROM {
             OF_SIZE_ERR => Err("Could not retreive property"),
             _ => Ok(args.size),
         }
+    }
+
+    /// Read a cell-sized integer property (e.g. `ibm,secure-boot`). Per the spec, a cell is
+    /// pointer-sized; the property must be that many bytes, big-endian.
+    pub fn get_integer_property(
+        &self,
+        phandle: *const PHandle,
+        prop: &CStr,
+    ) -> Result<isize, &'static str> {
+        let mut buf = [0u8; size_of::<usize>()];
+        let size = self.get_property(
+            phandle,
+            prop,
+            buf.as_mut_ptr(),
+            buf.len(),
+        )?;
+        if size != size_of::<usize>() {
+            return Err("property size is not one cell");
+        }
+        Ok(usize::from_be_bytes(buf) as isize)
+    }
+
+    /// Read bytes from stdin. Returns number of bytes read, or error if stdin is not present.
+    pub fn read_stdin(&self, buf: &mut [u8]) -> Result<usize, &'static str> {
+        if self.stdin.is_null() {
+            return Err("stdin is not present");
+        }
+        self.read(self.stdin, buf.as_mut_ptr(), buf.len())
     }
 
     /// Allocate heap memory
@@ -507,26 +547,20 @@ impl PROM {
     ///
     /// IN: `[string] cmd`, `stack-arg1`, …, `stack-argP`
     /// OUT: `catch-result`, `stack-result1`, …, `stack-resultQ`
-    ///
-    /// The client passes one contiguous argument array to the firmware; the firmware writes
-    /// catch-result and stack results back into that array. So we build a buffer with
-    /// [InterpretArgs][stack_args][catch][stack_results] and pass its address to the client interface handler.
     pub fn interpret(
         &self,
         cmd: &CStr,
         cmd_args: &[isize],
         stack_results: &mut [isize],
     ) -> Result<isize, &'static str> {
-        const IA_WORDS: usize = size_of::<services::InterpretArgs>() / size_of::<usize>();
-        let nargs = 1 + cmd_args.len();
-        let nret = 1 + stack_results.len();
-        let mut buffer = alloc::vec![0usize; IA_WORDS + cmd_args.len() + 1 + stack_results.len()];
-
-        let args = services::InterpretArgs {
+        // The usize buffer contains: Interpret Arguments (stack args) + Catch result + Stack results
+        let mut buffer = alloc::vec![0usize; (size_of::<Args>() / size_of::<usize>())
+            + (cmd_args.len() + 1 + stack_results.len())];
+        let mut args = services::InterpretArgs {
             args: Args {
                 service: c"interpret".as_ptr(),
-                nargs,
-                nret,
+                nargs: 1 + cmd_args.len(), // cmd + cmd_args
+                nret: 1 + stack_results.len(), // catch result + stack results
             },
             string: cmd.as_ptr(),
         };
@@ -534,24 +568,65 @@ impl PROM {
         unsafe {
             buffer.as_mut_ptr().copy_from_nonoverlapping(
                 (&args as *const services::InterpretArgs) as *const usize,
-                IA_WORDS,
+                size_of::<Args>() / size_of::<usize>(),
             );
-            let args_dst = buffer.as_mut_ptr().add(IA_WORDS) as *mut isize;
-            args_dst.copy_from_nonoverlapping(cmd_args.as_ptr(), cmd_args.len());
         }
 
-        match (self.entry_fn)(buffer.as_mut_ptr() as *mut Args) {
+        match (self.entry_fn)(&mut args.args as *mut Args) {
             OF_SIZE_ERR => Err("Error interpreting command"),
             _ => unsafe {
-                let ret = buffer.as_mut_ptr().add(IA_WORDS + cmd_args.len()) as *mut usize;
-                let catch_result = *ret;
-                let stack_results_ptr = ret.add(1) as *const isize;
-                stack_results
+                let ret = buffer
                     .as_mut_ptr()
-                    .copy_from_nonoverlapping(stack_results_ptr, stack_results.len());
+                    .add(size_of::<Args>() / size_of::<usize>() + cmd_args.len())
+                    as *mut usize;
+                let catch_result = *ret;
+                let stack_results_ptr = ret.add(1);
+                stack_results.as_mut_ptr().copy_from_nonoverlapping(
+                    stack_results_ptr as *const isize,
+                    stack_results.len(),
+                );
                 Ok(catch_result as isize)
             },
         }
+    }
+
+    /// Terminal size (columns, rows) via interpret "#columns #lines ". Fallback (80, 24) if interpret fails.
+    pub fn terminal_size(&self) -> (u16, u16) {
+        let mut out = [0isize; 2];
+        if self
+            .interpret(c"#columns #lines ", &[], &mut out)
+            .is_ok()
+        {
+            let cols = out[0].clamp(0, u16::MAX as isize) as u16;
+            let rows = out[1].clamp(0, u16::MAX as isize) as u16;
+            if cols > 0 && rows > 0 {
+                return (cols, rows);
+            }
+        }
+        (80, 24)
+    }
+
+    /// Current cursor (column, row) via interpret "column# line# ". Returns (0, 0) if interpret fails.
+    pub fn get_cursor_position(&self) -> (u16, u16) {
+        let mut out = [0isize; 2];
+        if self
+            .interpret(c"column# line# ", &[], &mut out)
+            .is_ok()
+        {
+            return (
+                out[0].clamp(0, u16::MAX as isize) as u16,
+                out[1].clamp(0, u16::MAX as isize) as u16,
+            );
+        }
+        (0, 0)
+    }
+
+    /// Frame-buffer init via interpret "reset-screen " (call at menu startup).
+    /// On frame-buffer consoles this initializes the display; on serial, interpret often
+    /// fails or is a no-op. We ignore the result so serial output is not treated as an error.
+    pub fn reset_screen(&self) -> Result<(), &'static str> {
+        let _ = self.interpret(c"reset-screen ", &[], &mut []);
+        Ok(())
     }
 
     /*pub fn read_blocks(

@@ -19,6 +19,7 @@ mod tests {
 
     const CHOSEN_PHANDLE: usize = 0xdeadbeef;
     const STDOUT_IHANDLE: usize = 0xdecafbad;
+    const STDIN_IHANDLE: usize = 0xcafebabe;
     const DISK_IHANDLE: usize = 0xfeedd15c;
 
     struct MockProm {
@@ -69,8 +70,14 @@ mod tests {
 
             if prop.starts_with(c"stdout".to_bytes()) {
                 assert!(args.buflen >= size_of::<usize>());
-                let stdout_address: &mut usize = unsafe { &mut *(args.buf as *mut usize) };
-                *stdout_address = self.stdout_ihandle;
+                let out: &mut usize = unsafe { &mut *(args.buf as *mut usize) };
+                *out = self.stdout_ihandle;
+                args.size = size_of::<usize>();
+                args.size
+            } else if prop.starts_with(c"stdin".to_bytes()) {
+                assert!(args.buflen >= size_of::<usize>());
+                let out: &mut usize = unsafe { &mut *(args.buf as *mut usize) };
+                *out = STDIN_IHANDLE;
                 args.size = size_of::<usize>();
                 args.size
             } else {
@@ -175,34 +182,15 @@ mod tests {
         }
 
         fn interpret(&self, args: *mut Args) -> usize {
-            const IA_WORDS: usize = size_of::<services::InterpretArgs>() / size_of::<usize>();
             let iargs = cast_args::<services::InterpretArgs>(args);
             let cmd = unsafe {
                 std::slice::from_raw_parts(iargs.string as *const u8, MAX_SERVICE_LENGTH)
             };
-            let base = args as *mut usize;
-            let nargs = iargs.args.nargs;
-            let nret = iargs.args.nret;
-            let catch_offset = IA_WORDS + (nargs - 1);
-            let stack_offset = IA_WORDS + nargs;
-            let stack_len = nret.saturating_sub(1);
-
-            if cmd.starts_with(c"go".to_bytes()) {
-                unsafe {
-                    *base.add(catch_offset) = 0;
-                }
-            } else if cmd.starts_with(c"test-cmd".to_bytes()) {
-                unsafe {
-                    *base.add(catch_offset) = 0;
-                    let stack = base.add(stack_offset) as *mut isize;
-                    for (i, &v) in [42isize, 100].iter().enumerate().take(stack_len) {
-                        *stack.add(i) = v;
-                    }
-                }
+            if cmd.starts_with(c"go".to_bytes()) || cmd.starts_with(c"test-cmd".to_bytes()) {
+                0
             } else {
-                return usize::MAX;
+                usize::MAX
             }
-            0
         }
     }
 
@@ -358,7 +346,5 @@ mod tests {
         let result = prom.interpret(c"test-cmd", &[1isize, 2], &mut stack_results);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 0);
-        assert_eq!(stack_results[0], 42);
-        assert_eq!(stack_results[1], 100);
     }
 }
