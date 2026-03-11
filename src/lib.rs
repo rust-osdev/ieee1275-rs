@@ -9,9 +9,9 @@
 extern crate alloc;
 
 use core::alloc::{GlobalAlloc, Layout};
+use core::ffi::CStr;
 use core::mem::size_of;
 use core::ptr;
-use core::ffi::CStr;
 
 const OF_SIZE_ERR: usize = usize::MAX;
 
@@ -131,7 +131,7 @@ pub mod services {
     #[repr(C)]
     pub struct InterpretArgs {
         pub args: Args,
-        pub string: *const c_char
+        pub string: *const c_char,
     }
 }
 
@@ -492,22 +492,39 @@ impl PROM {
         }
     }
 
-    pub fn interpret(&self, cmd: &CStr, cmd_args: &[isize], stack_results: &mut [isize]) -> Result<isize, &'static str> {
-        // The buffer contains: InterpretArgs + stack args (cmd_args) + Catch result + Stack results.
-        // Pass the buffer to the firmware so it can write catch and stack results.
+    /// Execute a Forth command string via the Open Firmware interpret client service (IEEE 1275 §6.3.2.6).
+    ///
+    /// IN: `[string] cmd`, `stack-arg1`, …, `stack-argP`
+    /// OUT: `catch-result`, `stack-result1`, …, `stack-resultQ`
+    ///
+    /// The client passes one contiguous argument array to the firmware; the firmware writes
+    /// catch-result and stack results back into that array. So we build a buffer with
+    /// [InterpretArgs][stack_args][catch][stack_results] and pass its address to the client interface handler.
+    pub fn interpret(
+        &self,
+        cmd: &CStr,
+        cmd_args: &[isize],
+        stack_results: &mut [isize],
+    ) -> Result<isize, &'static str> {
         const IA_WORDS: usize = size_of::<services::InterpretArgs>() / size_of::<usize>();
+        let nargs = 1 + cmd_args.len();
+        let nret = 1 + stack_results.len();
         let mut buffer = alloc::vec![0usize; IA_WORDS + cmd_args.len() + 1 + stack_results.len()];
+
         let args = services::InterpretArgs {
             args: Args {
                 service: c"interpret".as_ptr(),
-                nargs: 1 + cmd_args.len(), // cmd + cmd_args
-                nret: 1 + stack_results.len(), // catch result + stack results
+                nargs,
+                nret,
             },
             string: cmd.as_ptr(),
         };
 
         unsafe {
-            buffer.as_mut_ptr().copy_from_nonoverlapping((&args as *const services::InterpretArgs) as *const usize, IA_WORDS);
+            buffer.as_mut_ptr().copy_from_nonoverlapping(
+                (&args as *const services::InterpretArgs) as *const usize,
+                IA_WORDS,
+            );
             let args_dst = buffer.as_mut_ptr().add(IA_WORDS) as *mut isize;
             args_dst.copy_from_nonoverlapping(cmd_args.as_ptr(), cmd_args.len());
         }
@@ -518,9 +535,11 @@ impl PROM {
                 let ret = buffer.as_mut_ptr().add(IA_WORDS + cmd_args.len()) as *mut usize;
                 let catch_result = *ret;
                 let stack_results_ptr = ret.add(1) as *const isize;
-                stack_results.as_mut_ptr().copy_from_nonoverlapping(stack_results_ptr, stack_results.len());
+                stack_results
+                    .as_mut_ptr()
+                    .copy_from_nonoverlapping(stack_results_ptr, stack_results.len());
                 Ok(catch_result as isize)
-            }
+            },
         }
     }
 
