@@ -173,6 +173,37 @@ mod tests {
                 usize::MAX
             }
         }
+
+        fn interpret(&self, args: *mut Args) -> usize {
+            const IA_WORDS: usize = size_of::<services::InterpretArgs>() / size_of::<usize>();
+            let iargs = cast_args::<services::InterpretArgs>(args);
+            let cmd = unsafe {
+                std::slice::from_raw_parts(iargs.string as *const u8, MAX_SERVICE_LENGTH)
+            };
+            let base = args as *mut usize;
+            let nargs = iargs.args.nargs;
+            let nret = iargs.args.nret;
+            let catch_offset = IA_WORDS + (nargs - 1);
+            let stack_offset = IA_WORDS + nargs;
+            let stack_len = nret.saturating_sub(1);
+
+            if cmd.starts_with(c"go".to_bytes()) {
+                unsafe {
+                    *base.add(catch_offset) = 0;
+                }
+            } else if cmd.starts_with(c"test-cmd".to_bytes()) {
+                unsafe {
+                    *base.add(catch_offset) = 0;
+                    let stack = base.add(stack_offset) as *mut isize;
+                    for (i, &v) in [42isize, 100].iter().enumerate().take(stack_len) {
+                        *stack.add(i) = v;
+                    }
+                }
+            } else {
+                return usize::MAX;
+            }
+            0
+        }
     }
 
     extern "C" fn mock_entry(args: *mut Args) -> usize {
@@ -201,6 +232,8 @@ mod tests {
             mock_ref.close(args)
         } else if service.starts_with(c"call-method".to_bytes()) {
             mock_ref.call_method(args)
+        } else if service.starts_with(c"interpret".to_bytes()) {
+            mock_ref.interpret(args)
         } else if service.starts_with(c"exit".to_bytes()) {
             0
         } else if service.starts_with(c"power-off".to_bytes()) {
@@ -291,4 +324,19 @@ mod tests {
 
     #[test]
     fn close() {}
+
+    #[test]
+    fn interpret() {
+        let prom = PROM::new(mock_entry).unwrap();
+        let result = prom.interpret(c"go", &[], &mut []);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 0);
+
+        let mut stack_results = [0isize; 2];
+        let result = prom.interpret(c"test-cmd", &[1isize, 2], &mut stack_results);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 0);
+        assert_eq!(stack_results[0], 42);
+        assert_eq!(stack_results[1], 100);
+    }
 }

@@ -9,6 +9,7 @@
 extern crate alloc;
 
 use core::alloc::{GlobalAlloc, Layout};
+use core::mem::size_of;
 use core::ptr;
 use core::ffi::CStr;
 
@@ -125,6 +126,12 @@ pub mod services {
         pub nblocks: usize,
         pub result: usize,
         pub blocks_read: usize,
+    }
+
+    #[repr(C)]
+    pub struct InterpretArgs {
+        pub args: Args,
+        pub string: *const c_char
     }
 }
 
@@ -311,22 +318,6 @@ impl PROM {
         }
     }
 
-    /// Get an integer property from a package (e.g. `ibm,secure-boot` from `/`).
-    /// The device tree encodes integer properties in big-endian; the value is
-    /// returned as a native u32. Fails if the property is missing or not 4 bytes.
-    pub fn get_integer_property(
-        &self,
-        phandle: *const PHandle,
-        prop: &CStr,
-    ) -> Result<u32, &'static str> {
-        let mut buf: [u8; 4] = [0; 4];
-        let size = self.get_property(phandle, prop, buf.as_mut_ptr(), buf.len())?;
-        if size != 4 {
-            return Err("Property size is not 4 bytes");
-        }
-        Ok(u32::from_be_bytes(buf))
-    }
-
     /// Allocate heap memory
     ///
     /// # Arguments
@@ -498,6 +489,38 @@ impl PROM {
                 0 => Ok(args.block_size),
                 _ => Err("Error trying to retrieve block size"),
             },
+        }
+    }
+
+    pub fn interpret(&self, cmd: &CStr, cmd_args: &[isize], stack_results: &mut [isize]) -> Result<isize, &'static str> {
+        // The buffer contains: InterpretArgs + stack args (cmd_args) + Catch result + Stack results.
+        // Pass the buffer to the firmware so it can write catch and stack results.
+        const IA_WORDS: usize = size_of::<services::InterpretArgs>() / size_of::<usize>();
+        let mut buffer = alloc::vec![0usize; IA_WORDS + cmd_args.len() + 1 + stack_results.len()];
+        let args = services::InterpretArgs {
+            args: Args {
+                service: c"interpret".as_ptr(),
+                nargs: 1 + cmd_args.len(), // cmd + cmd_args
+                nret: 1 + stack_results.len(), // catch result + stack results
+            },
+            string: cmd.as_ptr(),
+        };
+
+        unsafe {
+            buffer.as_mut_ptr().copy_from_nonoverlapping((&args as *const services::InterpretArgs) as *const usize, IA_WORDS);
+            let args_dst = buffer.as_mut_ptr().add(IA_WORDS) as *mut isize;
+            args_dst.copy_from_nonoverlapping(cmd_args.as_ptr(), cmd_args.len());
+        }
+
+        match (self.entry_fn)(buffer.as_mut_ptr() as *mut Args) {
+            OF_SIZE_ERR => Err("Error interpreting command"),
+            _ => unsafe {
+                let ret = buffer.as_mut_ptr().add(IA_WORDS + cmd_args.len()) as *mut usize;
+                let catch_result = *ret;
+                let stack_results_ptr = ret.add(1) as *const isize;
+                stack_results.as_mut_ptr().copy_from_nonoverlapping(stack_results_ptr, stack_results.len());
+                Ok(catch_result as isize)
+            }
         }
     }
 
