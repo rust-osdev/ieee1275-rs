@@ -133,6 +133,21 @@ pub mod services {
         pub args: Args,
         pub string: *const c_char,
     }
+
+    /// instance-to-package: 1 arg (ihandle), 1 ret (phandle). Cells are pointer-sized.
+    #[repr(C)]
+    pub struct InstanceToPackageArgs {
+        pub args: Args,
+        pub ihandle: usize,
+        pub phandle: usize,
+    }
+
+    /// Client interface §6.3.2.7: milliseconds — IN: none, OUT: ms
+    #[repr(C)]
+    pub struct MillisecondsArgs {
+        pub args: Args,
+        pub ms: usize,
+    }
 }
 
 use services::{Args, CallMethodArgs};
@@ -163,6 +178,14 @@ pub struct PHandle {}
 /// Opaque type to represent a package instance handle
 #[repr(C)]
 pub struct IHandle {}
+
+/// Stdout device type from device_type property: display (framebuffer) or serial.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum StdoutDeviceType {
+    Display,
+    Serial,
+    Unknown,
+}
 
 /// OF represents an Open Firmware environment
 #[derive(Clone, Copy)]
@@ -361,7 +384,67 @@ impl PROM {
         Ok(usize::from_be_bytes(buf) as isize)
     }
 
+    /// Map an instance handle to its package handle (client interface "instance-to-package").
+    /// Returns the phandle of the device that the ihandle is an instance of.
+    pub fn instance_to_package(
+        &self,
+        ihandle: *const IHandle,
+    ) -> Result<*const PHandle, &'static str> {
+        if ihandle.is_null() {
+            return Err("null ihandle");
+        }
+        const INVALID_PHANDLE: usize = usize::MAX;
+        let mut args = services::InstanceToPackageArgs {
+            args: Args {
+                service: c"instance-to-package".as_ptr(),
+                nargs: 1,
+                nret: 1,
+            },
+            ihandle: ihandle as usize,
+            phandle: INVALID_PHANDLE,
+        };
+        if (self.entry_fn)(&mut args.args as *mut Args) == OF_SIZE_ERR {
+            return Err("instance-to-package failed");
+        }
+        if args.phandle == INVALID_PHANDLE {
+            return Err("invalid phandle");
+        }
+        Ok(args.phandle as *const PHandle)
+    }
+
+    /// Get the device_type of the stdout device. Instance-to-package(stdout) then getprop "device_type".
+    pub fn stdout_device_type(&self) -> StdoutDeviceType {
+        if self.stdout.is_null() {
+            return StdoutDeviceType::Unknown;
+        }
+        let stdout_ph = match self.instance_to_package(self.stdout) {
+            Ok(p) => p,
+            Err(_) => return StdoutDeviceType::Unknown,
+        };
+        let mut buf = [0u8; 16];
+        let size = match self.get_property(
+            stdout_ph,
+            c"device_type",
+            buf.as_mut_ptr(),
+            buf.len(),
+        ) {
+            Ok(s) => s,
+            Err(_) => return StdoutDeviceType::Unknown,
+        };
+        if size >= 7 && &buf[..7] == b"display" {
+            return StdoutDeviceType::Display;
+        }
+        if size >= 6 && &buf[..6] == b"serial" {
+            return StdoutDeviceType::Serial;
+        }
+        StdoutDeviceType::Unknown
+    }
+
     /// Read bytes from stdin. Returns number of bytes read, or error if stdin is not present.
+    ///
+    /// On many IEEE 1275 implementations (e.g. SLOF), a read when no input is available
+    /// returns 0 bytes rather than blocking. Callers can poll by calling repeatedly and
+    /// treating `Ok(0)` as "no data yet" (see GRUB2's console readkey / getkey_noblock).
     pub fn read_stdin(&self, buf: &mut [u8]) -> Result<usize, &'static str> {
         if self.stdin.is_null() {
             return Err("stdin is not present");
@@ -606,6 +689,21 @@ impl PROM {
         (80, 24)
     }
 
+    /// Terminal size safe for menu use. Serial is forced to 80x24; display uses firmware size
+    /// clamped to 1..=160 cols and 1..=60 rows to avoid bogus values (e.g. SLOF reporting 200).
+    pub fn terminal_size_safe(&self) -> (u16, u16) {
+        match self.stdout_device_type() {
+            StdoutDeviceType::Serial => (80, 24),
+            StdoutDeviceType::Display | StdoutDeviceType::Unknown => {
+                let (cols, rows) = self.terminal_size();
+                (
+                    cols.clamp(1, 160),
+                    rows.clamp(1, 60),
+                )
+            }
+        }
+    }
+
     /// Current cursor (column, row) via interpret "column# line# ". Returns (0, 0) if interpret fails.
     pub fn get_cursor_position(&self) -> (u16, u16) {
         let mut out = [0isize; 2];
@@ -627,6 +725,23 @@ impl PROM {
     pub fn reset_screen(&self) -> Result<(), &'static str> {
         let _ = self.interpret(c"reset-screen ", &[], &mut []);
         Ok(())
+    }
+
+    /// Elapsed time in milliseconds (client interface §6.3.2.7). Increases over time; use for delays.
+    /// Returns 0 if the service is unavailable.
+    pub fn milliseconds(&self) -> u32 {
+        let mut args = services::MillisecondsArgs {
+            args: Args {
+                service: c"milliseconds".as_ptr(),
+                nargs: 0,
+                nret: 1,
+            },
+            ms: 0,
+        };
+        if (self.entry_fn)(&mut args.args as *mut Args) != OF_SIZE_ERR {
+            return args.ms as u32;
+        }
+        0
     }
 
     /*pub fn read_blocks(
