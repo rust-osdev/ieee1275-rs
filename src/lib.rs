@@ -152,6 +152,166 @@ pub mod services {
 
 use services::{Args, CallMethodArgs};
 
+/// Simple free-list heap backed by a single OF `claim` allocation.
+/// Each free block has a header: [size: usize, next: *mut u8].
+/// Minimum block size is HEADER_SIZE (2 * size_of::<usize>()).
+mod heap {
+    use core::ptr;
+
+    const HEADER_SIZE: usize = 2 * core::mem::size_of::<usize>();
+
+    pub struct Heap {
+        base: *mut u8,
+        size: usize,
+        free_list: *mut u8,
+    }
+
+    unsafe impl Send for Heap {}
+    unsafe impl Sync for Heap {}
+
+    impl Heap {
+        pub const fn empty() -> Self {
+            Self {
+                base: ptr::null_mut(),
+                size: 0,
+                free_list: ptr::null_mut(),
+            }
+        }
+
+        pub fn init(&mut self, base: *mut u8, size: usize) {
+            self.base = base;
+            self.size = size;
+            self.free_list = base;
+            unsafe {
+                *(base as *mut usize) = size;
+                *((base as *mut usize).add(1)) = 0; // next = null
+            }
+        }
+
+        pub fn is_initialized(&self) -> bool {
+            !self.base.is_null()
+        }
+
+        fn align_up(val: usize, align: usize) -> usize {
+            (val + align - 1) & !(align - 1)
+        }
+
+        pub fn alloc(&mut self, size: usize, align: usize) -> *mut u8 {
+            let alloc_size = Self::align_up(size.max(HEADER_SIZE), core::mem::size_of::<usize>());
+
+            let mut prev: *mut u8 = ptr::null_mut();
+            let mut current = self.free_list;
+
+            while !current.is_null() {
+                let block_size = unsafe { *(current as *const usize) };
+                let next = unsafe { *((current as *const usize).add(1)) as *mut u8 };
+
+                let aligned_start = Self::align_up(current as usize + HEADER_SIZE, align);
+                let padding = aligned_start - (current as usize + HEADER_SIZE);
+                let total_needed = HEADER_SIZE + padding + alloc_size;
+
+                if block_size >= total_needed {
+                    let remainder = block_size - total_needed;
+                    if remainder >= HEADER_SIZE + 16 {
+                        // Split: keep remainder as free block at `current`
+                        unsafe {
+                            *(current as *mut usize) = remainder;
+                        }
+                        let alloc_block = unsafe { current.add(remainder) };
+                        unsafe {
+                            *(alloc_block as *mut usize) = total_needed;
+                        }
+                        return unsafe { alloc_block.add(HEADER_SIZE + padding) };
+                    } else {
+                        // Use entire block
+                        if prev.is_null() {
+                            self.free_list = next;
+                        } else {
+                            unsafe {
+                                *((prev as *mut usize).add(1)) = next as usize;
+                            }
+                        }
+                        return unsafe { current.add(HEADER_SIZE + padding) };
+                    }
+                }
+
+                prev = current;
+                current = next;
+            }
+
+            ptr::null_mut()
+        }
+
+        pub fn dealloc(&mut self, ptr: *mut u8, size: usize) {
+            let alloc_size = Self::align_up(size.max(HEADER_SIZE), core::mem::size_of::<usize>());
+            // Walk backwards to find the block header
+            // The header is at most HEADER_SIZE + alignment bytes before ptr
+            let block_start = unsafe {
+                let mut candidate = ptr.sub(HEADER_SIZE);
+                let stored_size = *(candidate as *const usize);
+                // Verify: the stored size should cover from candidate to at least ptr + size
+                if stored_size >= HEADER_SIZE
+                    && candidate as usize + stored_size >= ptr as usize + alloc_size
+                {
+                    candidate
+                } else {
+                    // Fallback: just use ptr - HEADER_SIZE and set size
+                    candidate = ptr.sub(HEADER_SIZE);
+                    *(candidate as *mut usize) = HEADER_SIZE + alloc_size;
+                    candidate
+                }
+            };
+
+            let block_size = unsafe { *(block_start as *const usize) };
+            // Insert into free list (sorted by address for coalescing)
+            let mut prev: *mut u8 = ptr::null_mut();
+            let mut current = self.free_list;
+
+            while !current.is_null() && (current as usize) < (block_start as usize) {
+                prev = current;
+                current = unsafe { *((current as *const usize).add(1)) as *mut u8 };
+            }
+
+            // Try coalesce with next
+            let mut new_size = block_size;
+            let mut new_next = current;
+            if !current.is_null()
+                && unsafe { block_start.add(new_size) } == current
+            {
+                new_size += unsafe { *(current as *const usize) };
+                new_next = unsafe { *((current as *const usize).add(1)) as *mut u8 };
+            }
+
+            // Try coalesce with prev
+            if !prev.is_null() {
+                let prev_size = unsafe { *(prev as *const usize) };
+                if unsafe { prev.add(prev_size) } == block_start {
+                    unsafe {
+                        *(prev as *mut usize) = prev_size + new_size;
+                        *((prev as *mut usize).add(1)) = new_next as usize;
+                    }
+                    return;
+                }
+            }
+
+            // Insert as new free block
+            unsafe {
+                *(block_start as *mut usize) = new_size;
+                *((block_start as *mut usize).add(1)) = new_next as usize;
+            }
+            if prev.is_null() {
+                self.free_list = block_start;
+            } else {
+                unsafe {
+                    *((prev as *mut usize).add(1)) = block_start as usize;
+                }
+            }
+        }
+    }
+}
+
+static mut HEAP: heap::Heap = heap::Heap::empty();
+
 #[cfg_attr(not(feature = "no_global_allocator"), global_allocator)]
 static mut GLOBAL_PROM: PROM = PROM {
     entry_fn: fallback_entry,
@@ -384,6 +544,53 @@ impl PROM {
         Ok(usize::from_be_bytes(buf) as isize)
     }
 
+    /// Sum total physical RAM by reading the `/memory` node's `reg` property.
+    /// On ppc64 SLOF, `#address-cells` and `#size-cells` are 2, so each (address, size)
+    /// pair is two big-endian u64 values (4 cells / 16 bytes per entry).
+    fn total_memory_bytes(&self) -> Option<u64> {
+        let memory = self.find_device(c"/memory").ok()?;
+        let mut buf = [0u8; 128];
+        let len = self.get_property(memory, c"reg", buf.as_mut_ptr(), buf.len()).ok()?;
+
+        const ENTRY_SIZE: usize = 16; // 2×u64 = 16 bytes per (addr, size) pair
+        if len == 0 || len % ENTRY_SIZE != 0 {
+            return None;
+        }
+
+        let mut total: u64 = 0;
+        let entries = len / ENTRY_SIZE;
+        for i in 0..entries {
+            let off = i * ENTRY_SIZE + 8; // skip 8-byte address, read 8-byte size
+            let size = u64::from_be_bytes([
+                buf[off], buf[off + 1], buf[off + 2], buf[off + 3],
+                buf[off + 4], buf[off + 5], buf[off + 6], buf[off + 7],
+            ]);
+            total = total.saturating_add(size);
+        }
+
+        if total == 0 { None } else { Some(total) }
+    }
+
+    /// Determine heap size from total physical RAM.
+    /// Policy: 1/4 of RAM, clamped to 16 MB .. 512 MB, page-aligned. Falls back to 128 MB.
+    fn compute_heap_size(&self) -> usize {
+        const MIN_HEAP: u64 = 16 * 1024 * 1024;
+        const MAX_HEAP: u64 = 512 * 1024 * 1024;
+        const FALLBACK: usize = 128 * 1024 * 1024;
+        const PAGE: usize = 4096;
+
+        let size = match self.total_memory_bytes() {
+            Some(total) => {
+                let quarter = total / 4;
+                let clamped = quarter.clamp(MIN_HEAP, MAX_HEAP);
+                clamped as usize
+            }
+            None => FALLBACK,
+        };
+
+        (size + PAGE - 1) & !(PAGE - 1)
+    }
+
     /// Map an instance handle to its package handle (client interface "instance-to-package").
     /// Returns the phandle of the device that the ihandle is an instance of.
     pub fn instance_to_package(
@@ -477,7 +684,12 @@ impl PROM {
 
         match (self.entry_fn)(&mut args.args as *mut Args) {
             OF_SIZE_ERR => Err("Could not allocate memory"),
-            _ => Ok(args.ret),
+            _ => {
+                if args.ret as usize == usize::MAX {
+                    return Err("claim returned -1: allocation failed");
+                }
+                Ok(args.ret)
+            }
         }
     }
 
@@ -780,16 +992,31 @@ impl PROM {
 
 unsafe impl GlobalAlloc for PROM {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        match self.claim(layout.size(), layout.align()) {
-            Ok(ret) => ret,
-            Err(msg) => {
-                panic!("{}", msg);
+        unsafe {
+            if !HEAP.is_initialized() {
+                let heap_size = self.compute_heap_size();
+                match self.claim(heap_size, 4096) {
+                    Ok(base) => {
+                        if base as usize == usize::MAX {
+                            panic!("heap claim returned -1");
+                        }
+                        HEAP.init(base, heap_size);
+                    }
+                    Err(_) => panic!("heap claim failed"),
+                }
             }
+            let ptr = HEAP.alloc(layout.size(), layout.align());
+            if ptr.is_null() {
+                panic!("out of heap memory");
+            }
+            ptr
         }
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        self.release(ptr, layout.size());
+        unsafe {
+            HEAP.dealloc(ptr, layout.size());
+        }
     }
 }
 

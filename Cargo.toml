@@ -1,6 +1,3 @@
-[workspace]
-members = [".", "test-runner", "example"]
-
 [package]
 name = "ieee1275"
 description = "Safe and easy-to-use wrapper for building OpenFirmware/IEEE1275 apps"
